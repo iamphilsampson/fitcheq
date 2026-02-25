@@ -121,6 +121,20 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/outfits/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const outfit = await storage.updateOutfit(id, req.body);
+      if (!outfit) {
+        return res.status(404).json({ error: "Outfit not found" });
+      }
+      res.json(outfit);
+    } catch (error) {
+      console.error("Error updating outfit:", error);
+      res.status(500).json({ error: "Failed to update outfit" });
+    }
+  });
+
   app.delete("/api/outfits/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);

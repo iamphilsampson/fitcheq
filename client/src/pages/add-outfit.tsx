@@ -1,20 +1,62 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
-import { Camera, Upload, ArrowLeft, Loader2, X, Image as ImageIcon } from "lucide-react";
+import { Camera, Upload, ArrowLeft, Loader2, X, Image as ImageIcon, Crop } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import ReactCrop, { type Crop as CropType, centerCrop, makeAspectCrop } from "react-image-crop";
+import "react-image-crop/dist/ReactCrop.css";
+
+function getCroppedBlob(image: HTMLImageElement, crop: CropType): Promise<Blob> {
+  const canvas = document.createElement("canvas");
+  const scaleX = image.naturalWidth / image.width;
+  const scaleY = image.naturalHeight / image.height;
+  const pixelCrop = {
+    x: (crop.x || 0) * scaleX,
+    y: (crop.y || 0) * scaleY,
+    width: (crop.width || 0) * scaleX,
+    height: (crop.height || 0) * scaleY,
+  };
+  canvas.width = pixelCrop.width;
+  canvas.height = pixelCrop.height;
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(
+    image,
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
+    pixelCrop.width,
+    pixelCrop.height
+  );
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("Canvas is empty"));
+      },
+      "image/jpeg",
+      0.92
+    );
+  });
+}
 
 export default function AddOutfit() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
 
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [crop, setCrop] = useState<CropType>();
+  const [isCropping, setIsCropping] = useState(false);
+  const [croppedPreview, setCroppedPreview] = useState<string | null>(null);
   const [dateWorn, setDateWorn] = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
   const [isUploading, setIsUploading] = useState(false);
@@ -32,11 +74,40 @@ export default function AddOutfit() {
       }
 
       setSelectedImage(file);
+      setCroppedPreview(null);
+      setIsCropping(true);
       const reader = new FileReader();
       reader.onload = (e) => {
         setImagePreview(e.target?.result as string);
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const onImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
+    const { width, height } = e.currentTarget;
+    const newCrop = centerCrop(
+      makeAspectCrop({ unit: "%", width: 90 }, 3 / 4, width, height),
+      width,
+      height
+    );
+    setCrop(newCrop);
+  }, []);
+
+  const handleCropDone = async () => {
+    if (!imgRef.current || !crop) return;
+    try {
+      const blob = await getCroppedBlob(imgRef.current, crop);
+      const url = URL.createObjectURL(blob);
+      setCroppedPreview(url);
+      setIsCropping(false);
+    } catch {
+      toast({
+        title: "Crop failed",
+        description: "Could not crop the image, using original",
+        variant: "destructive",
+      });
+      setIsCropping(false);
     }
   };
 
@@ -57,6 +128,8 @@ export default function AddOutfit() {
   const clearImage = () => {
     setSelectedImage(null);
     setImagePreview(null);
+    setCroppedPreview(null);
+    setIsCropping(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -75,14 +148,18 @@ export default function AddOutfit() {
     setIsUploading(true);
 
     try {
-      // Step 1: Request presigned URL
+      let uploadBlob: Blob = selectedImage;
+      if (croppedPreview && imgRef.current && crop) {
+        uploadBlob = await getCroppedBlob(imgRef.current, crop);
+      }
+
       const urlResponse = await fetch("/api/uploads/request-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: selectedImage.name,
-          size: selectedImage.size,
-          contentType: selectedImage.type,
+          size: uploadBlob.size,
+          contentType: "image/jpeg",
         }),
       });
 
@@ -92,36 +169,32 @@ export default function AddOutfit() {
 
       const { uploadURL, objectPath } = await urlResponse.json();
 
-      // Step 2: Upload image directly to storage
       const uploadResponse = await fetch(uploadURL, {
         method: "PUT",
-        body: selectedImage,
-        headers: { "Content-Type": selectedImage.type },
+        body: uploadBlob,
+        headers: { "Content-Type": "image/jpeg" },
       });
 
       if (!uploadResponse.ok) {
         throw new Error("Failed to upload image");
       }
 
-      // Step 3: Send to AI analysis endpoint
-      const analysisResponse = await fetch("/api/outfits/analyze", {
+      const outfitResponse = await fetch("/api/outfits", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          imageUrl: objectPath,
+          fullImageUrl: objectPath,
           dateWorn,
-          notes,
+          notes: notes || null,
         }),
       });
 
-      if (!analysisResponse.ok) {
-        throw new Error("Failed to analyze outfit");
+      if (!outfitResponse.ok) {
+        throw new Error("Failed to create outfit");
       }
 
-      const { outfitId, detectedItems } = await analysisResponse.json();
-
-      // Navigate to reconciliation page
-      navigate(`/reconcile/${outfitId}?items=${encodeURIComponent(JSON.stringify(detectedItems))}`);
+      const outfit = await outfitResponse.json();
+      navigate(`/reconcile/${outfit.id}`);
     } catch (error) {
       console.error("Upload error:", error);
       toast({
@@ -137,23 +210,21 @@ export default function AddOutfit() {
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
-        <div className="px-4 py-3 flex items-center gap-3">
+        <div className="px-4 py-2 flex items-center gap-3">
           <Button
             variant="ghost"
             size="icon"
+            className="h-8 w-8"
             onClick={() => navigate("/")}
             data-testid="button-back"
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <div>
-            <h1 className="text-lg font-semibold text-foreground">Add Outfit</h1>
-            <p className="text-xs text-muted-foreground">Capture your look</p>
-          </div>
+          <h1 className="text-base font-semibold text-foreground">Add Outfit</h1>
         </div>
       </header>
 
-      <main className="p-4 space-y-6">
+      <main className="p-4 space-y-4">
         <input
           ref={fileInputRef}
           type="file"
@@ -165,14 +236,14 @@ export default function AddOutfit() {
 
         {!imagePreview ? (
           <Card className="p-6">
-            <div className="flex flex-col items-center justify-center py-8 space-y-4">
-              <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
-                <Camera className="h-10 w-10 text-primary" />
+            <div className="flex flex-col items-center justify-center py-6 space-y-4">
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                <Camera className="h-8 w-8 text-primary" />
               </div>
               <div className="text-center">
-                <h3 className="font-semibold text-foreground">Capture Your Outfit</h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Take a photo or upload from your gallery
+                <h3 className="font-semibold text-foreground text-sm">Capture Your Outfit</h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Take a photo or upload from gallery
                 </p>
               </div>
               <div className="flex gap-3 w-full max-w-xs">
@@ -197,32 +268,75 @@ export default function AddOutfit() {
               </div>
             </div>
           </Card>
+        ) : isCropping ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium flex items-center gap-2">
+                <Crop className="h-4 w-4" />
+                Crop your photo
+              </span>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setIsCropping(false)} data-testid="button-skip-crop">
+                  Skip
+                </Button>
+                <Button size="sm" onClick={handleCropDone} data-testid="button-apply-crop">
+                  Apply
+                </Button>
+              </div>
+            </div>
+            <ReactCrop
+              crop={crop}
+              onChange={(c) => setCrop(c)}
+              aspect={3 / 4}
+              className="max-h-[60vh] mx-auto"
+            >
+              <img
+                ref={imgRef}
+                src={imagePreview}
+                alt="Crop preview"
+                onLoad={onImageLoad}
+                className="max-h-[60vh] mx-auto"
+              />
+            </ReactCrop>
+          </div>
         ) : (
           <div className="relative">
             <Card className="overflow-hidden">
               <div className="aspect-[3/4] bg-muted relative">
                 <img
-                  src={imagePreview}
+                  ref={imgRef}
+                  src={croppedPreview || imagePreview}
                   alt="Outfit preview"
                   className="w-full h-full object-cover"
                 />
               </div>
             </Card>
-            <Button
-              variant="secondary"
-              size="icon"
-              className="absolute top-2 right-2 rounded-full shadow-md"
-              onClick={clearImage}
-              data-testid="button-clear-image"
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            <div className="absolute top-2 right-2 flex gap-2">
+              <Button
+                variant="secondary"
+                size="icon"
+                className="rounded-full shadow-md h-8 w-8"
+                onClick={() => setIsCropping(true)}
+                data-testid="button-recrop"
+              >
+                <Crop className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="secondary"
+                size="icon"
+                className="rounded-full shadow-md h-8 w-8"
+                onClick={clearImage}
+                data-testid="button-clear-image"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         )}
 
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="date">Date Worn</Label>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="date" className="text-sm">Date Worn</Label>
             <Input
               id="date"
               type="date"
@@ -232,14 +346,14 @@ export default function AddOutfit() {
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="notes">Notes (optional)</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="notes" className="text-sm">Notes (optional)</Label>
             <Textarea
               id="notes"
               placeholder="Where did you wear this? Any occasion?"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              rows={3}
+              rows={2}
               data-testid="input-notes"
             />
           </div>
@@ -249,18 +363,18 @@ export default function AddOutfit() {
           className="w-full gap-2"
           size="lg"
           onClick={handleSubmit}
-          disabled={!selectedImage || isUploading}
+          disabled={!selectedImage || isUploading || isCropping}
           data-testid="button-submit"
         >
           {isUploading ? (
             <>
               <Loader2 className="h-5 w-5 animate-spin" />
-              Analyzing outfit...
+              Saving...
             </>
           ) : (
             <>
               <Upload className="h-5 w-5" />
-              Upload & Analyze
+              Save Outfit
             </>
           )}
         </Button>

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Camera, Shirt, Calendar, Search, Plus, ChevronRight } from "lucide-react";
+import { Camera, Shirt, Calendar, Search, LayoutGrid, List } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,8 @@ import type { Item, Outfit } from "@shared/schema";
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("wardrobe");
+  const [activeTab, setActiveTab] = useState("outfits");
+  const [outfitViewMode, setOutfitViewMode] = useState<"card" | "feed">("card");
 
   const { data: items, isLoading: itemsLoading } = useQuery<Item[]>({
     queryKey: ["/api/items"],
@@ -44,38 +45,146 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
-        <div className="px-4 py-3">
-          <h1 className="text-2xl font-bold text-foreground">Fit Check</h1>
-          <p className="text-sm text-muted-foreground">Your digital wardrobe</p>
-        </div>
-      </header>
-
-      <main className="pb-24">
-        <div className="px-4 py-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <div className="px-4 py-2 flex items-center justify-between">
+          <h1 className="text-lg font-bold tracking-tight text-foreground" style={{ fontFamily: "'Inter', sans-serif", letterSpacing: "-0.03em" }}>
+            fit<span className="text-primary">check</span>
+          </h1>
+          <div className="relative flex-1 max-w-[200px] ml-3">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search your wardrobe..."
-              className="pl-10"
+              placeholder="Search..."
+              className="pl-8 h-8 text-sm"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               data-testid="input-search"
             />
           </div>
         </div>
+      </header>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="px-4">
+      <main className="pb-24">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="px-4 pt-2">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="wardrobe" data-testid="tab-wardrobe">
-              <Shirt className="h-4 w-4 mr-2" />
-              Wardrobe
-            </TabsTrigger>
             <TabsTrigger value="outfits" data-testid="tab-outfits">
               <Calendar className="h-4 w-4 mr-2" />
               Outfits
             </TabsTrigger>
+            <TabsTrigger value="wardrobe" data-testid="tab-wardrobe">
+              <Shirt className="h-4 w-4 mr-2" />
+              Wardrobe
+            </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="outfits" className="mt-4">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm text-muted-foreground">
+                {outfits?.length || 0} outfits
+              </span>
+              <div className="flex gap-1">
+                <Button
+                  variant={outfitViewMode === "card" ? "secondary" : "ghost"}
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setOutfitViewMode("card")}
+                  data-testid="button-card-view"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={outfitViewMode === "feed" ? "secondary" : "ghost"}
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setOutfitViewMode("feed")}
+                  data-testid="button-feed-view"
+                >
+                  <List className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {outfitsLoading ? (
+              <div className={outfitViewMode === "card" ? "grid grid-cols-2 gap-3" : "space-y-4"}>
+                {[1, 2, 3, 4].map((i) => (
+                  <Skeleton key={i} className="aspect-[3/4] rounded-md" />
+                ))}
+              </div>
+            ) : !outfits?.length ? (
+              <EmptyState
+                icon={<Calendar className="h-12 w-12" />}
+                title="No outfits yet"
+                description="Capture your first outfit to start tracking your style"
+              />
+            ) : outfitViewMode === "card" ? (
+              <div className="grid grid-cols-2 gap-3">
+                {outfits.map((outfit) => (
+                  <Link key={outfit.id} href={`/outfits/${outfit.id}`}>
+                    <Card
+                      className="overflow-hidden hover-elevate cursor-pointer"
+                      data-testid={`card-outfit-${outfit.id}`}
+                    >
+                      <div className="aspect-[3/4] bg-muted">
+                        <img
+                          src={outfit.fullImageUrl}
+                          alt={`Outfit from ${outfit.dateWorn}`}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="p-2">
+                        <p className="text-xs font-medium">
+                          {new Date(outfit.dateWorn).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                        </p>
+                        {outfit.notes && (
+                          <p className="text-xs text-muted-foreground truncate mt-0.5">
+                            {outfit.notes}
+                          </p>
+                        )}
+                      </div>
+                    </Card>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {outfits.map((outfit) => (
+                  <Link key={outfit.id} href={`/outfits/${outfit.id}`}>
+                    <Card
+                      className="overflow-hidden hover-elevate cursor-pointer"
+                      data-testid={`card-outfit-feed-${outfit.id}`}
+                    >
+                      <div className="bg-muted">
+                        <img
+                          src={outfit.fullImageUrl}
+                          alt={`Outfit from ${outfit.dateWorn}`}
+                          className="w-full object-cover"
+                          style={{ maxHeight: "70vh" }}
+                        />
+                      </div>
+                      <div className="p-3">
+                        <p className="text-sm font-medium">
+                          {new Date(outfit.dateWorn).toLocaleDateString("en-US", {
+                            weekday: "short",
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                        </p>
+                        {outfit.notes && (
+                          <p className="text-sm text-muted-foreground mt-1">
+                            {outfit.notes}
+                          </p>
+                        )}
+                      </div>
+                    </Card>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </TabsContent>
 
           <TabsContent value="wardrobe" className="mt-4">
             {itemsLoading ? (
@@ -148,55 +257,6 @@ export default function Home() {
                       ))}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="outfits" className="mt-4">
-            {outfitsLoading ? (
-              <div className="grid grid-cols-2 gap-3">
-                {[1, 2, 3, 4].map((i) => (
-                  <Skeleton key={i} className="aspect-[3/4] rounded-md" />
-                ))}
-              </div>
-            ) : !outfits?.length ? (
-              <EmptyState
-                icon={<Calendar className="h-12 w-12" />}
-                title="No outfits yet"
-                description="Capture your first outfit to start tracking your style"
-              />
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                {outfits.map((outfit) => (
-                  <Link key={outfit.id} href={`/outfits/${outfit.id}`}>
-                    <Card
-                      className="overflow-hidden hover-elevate cursor-pointer"
-                      data-testid={`card-outfit-${outfit.id}`}
-                    >
-                      <div className="aspect-[3/4] bg-muted">
-                        <img
-                          src={outfit.fullImageUrl}
-                          alt={`Outfit from ${outfit.dateWorn}`}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <div className="p-2">
-                        <p className="text-xs font-medium">
-                          {new Date(outfit.dateWorn).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
-                        </p>
-                        {outfit.notes && (
-                          <p className="text-xs text-muted-foreground truncate mt-0.5">
-                            {outfit.notes}
-                          </p>
-                        )}
-                      </div>
-                    </Card>
-                  </Link>
                 ))}
               </div>
             )}
