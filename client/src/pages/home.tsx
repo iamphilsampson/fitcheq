@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/dialog";
 import type { Item, Outfit } from "@shared/schema";
 
+type OutfitWithCount = Outfit & { itemCount: number };
+
 function getPreset(): "male" | "female" {
   return (localStorage.getItem("fitcheck-preset") as "male" | "female") || "male";
 }
@@ -36,7 +38,7 @@ export default function Home() {
     queryKey: ["/api/items"],
   });
 
-  const { data: outfits, isLoading: outfitsLoading } = useQuery<Outfit[]>({
+  const { data: outfits, isLoading: outfitsLoading } = useQuery<OutfitWithCount[]>({
     queryKey: ["/api/outfits"],
   });
 
@@ -157,13 +159,20 @@ export default function Home() {
                         />
                       </div>
                       <div className="p-2">
-                        <p className="text-xs font-medium">
-                          {new Date(outfit.dateWorn).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
-                        </p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-medium">
+                            {new Date(outfit.dateWorn).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            })}
+                          </p>
+                          {outfit.itemCount > 0 && (
+                            <span className="text-xs text-muted-foreground" data-testid={`text-item-count-${outfit.id}`}>
+                              {outfit.itemCount} item{outfit.itemCount !== 1 ? "s" : ""}
+                            </span>
+                          )}
+                        </div>
                         {outfit.notes && (
                           <p className="text-xs text-muted-foreground truncate mt-0.5">
                             {outfit.notes}
@@ -191,14 +200,21 @@ export default function Home() {
                         />
                       </div>
                       <div className="p-3">
-                        <p className="text-sm font-medium">
-                          {new Date(outfit.dateWorn).toLocaleDateString("en-US", {
-                            weekday: "short",
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
-                        </p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-medium">
+                            {new Date(outfit.dateWorn).toLocaleDateString("en-US", {
+                              weekday: "short",
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            })}
+                          </p>
+                          {outfit.itemCount > 0 && (
+                            <span className="text-xs text-muted-foreground">
+                              {outfit.itemCount} item{outfit.itemCount !== 1 ? "s" : ""}
+                            </span>
+                          )}
+                        </div>
                         {outfit.notes && (
                           <p className="text-sm text-muted-foreground mt-1">
                             {outfit.notes}

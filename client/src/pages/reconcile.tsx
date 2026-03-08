@@ -1,21 +1,60 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation, useRoute } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Check, Plus, Loader2, Shirt, X, ChevronDown, ChevronUp, Footprints, Watch, CloudSun } from "lucide-react";
+import { ArrowLeft, Check, Plus, Loader2, Shirt, X, ChevronDown, ChevronUp, Footprints, Maximize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Item, DetectedItem, Outfit } from "@shared/schema";
 
+function JacketIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M12 2L8 6v4l-4 2v8h6v-4h4v4h6v-8l-4-2V6l-4-4z" />
+      <path d="M12 2v8" />
+    </svg>
+  );
+}
+
+function TrousersIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M6 2h12v6l-2 14h-3L12 12l-1 10H8L6 8V2z" />
+    </svg>
+  );
+}
+
+function SunglassesIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M2 12c0-2 1.5-4 4-4h1.5L9 8h6l1.5 0H18c2.5 0 4 2 4 4" />
+      <circle cx="7" cy="13" r="3" />
+      <circle cx="17" cy="13" r="3" />
+      <path d="M10 13h4" />
+    </svg>
+  );
+}
+
 const SLOT_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   Tops: Shirt,
-  Outerwear: CloudSun,
-  Bottoms: Shirt,
+  Outerwear: JacketIcon,
+  Bottoms: TrousersIcon,
   Footwear: Footprints,
-  Accessories: Watch,
+  Accessories: SunglassesIcon,
 };
 
 function SlotIcon({ category, className }: { category: string; className?: string }) {
@@ -134,6 +173,104 @@ function buildInitialSlots(preset: "male" | "female"): SlotState[] {
   }));
 }
 
+function SearchInput({
+  slot,
+  index,
+  existingItems,
+  slots,
+  onSelectExisting,
+  onUpdateColorBrand,
+}: {
+  slot: SlotState;
+  index: number;
+  existingItems: Item[] | undefined;
+  slots: SlotState[];
+  onSelectExisting: (slotId: string, item: Item) => void;
+  onUpdateColorBrand: (slotId: string, value: string) => void;
+}) {
+  const [focusedIdx, setFocusedIdx] = useState(-1);
+  const [isFocused, setIsFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const usedIds = new Set(slots.filter((s) => s.existingItemId).map((s) => s.existingItemId));
+  const matching = (existingItems || []).filter((item) => {
+    if (usedIds.has(item.id)) return false;
+    if (item.category.toLowerCase() !== slot.category.toLowerCase()) return false;
+    if (slot.selectedSubCategory && item.subCategory && item.subCategory.toLowerCase() !== slot.selectedSubCategory.toLowerCase()) return false;
+    const query = slot.colorBrand.toLowerCase();
+    if (!query) return true;
+    const itemText = [item.color, item.brand, item.subCategory, item.description].filter(Boolean).join(" ").toLowerCase();
+    return itemText.includes(query);
+  });
+
+  const showDropdown = isFocused && matching.length > 0 && slot.colorBrand.length > 0;
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!showDropdown) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setFocusedIdx((prev) => Math.min(prev + 1, matching.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setFocusedIdx((prev) => Math.max(prev - 1, 0));
+    } else if (e.key === "Enter" && focusedIdx >= 0 && focusedIdx < matching.length) {
+      e.preventDefault();
+      onSelectExisting(slot.id, matching[focusedIdx]);
+      setIsFocused(false);
+    }
+  };
+
+  useEffect(() => {
+    setFocusedIdx(-1);
+  }, [slot.colorBrand]);
+
+  return (
+    <div className="relative">
+      <Input
+        ref={inputRef}
+        placeholder="Colour / Brand (e.g. Black / Nike)"
+        value={slot.colorBrand}
+        onChange={(e) => onUpdateColorBrand(slot.id, e.target.value)}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setTimeout(() => setIsFocused(false), 150)}
+        onKeyDown={handleKeyDown}
+        className="text-sm"
+        data-testid={`input-color-brand-${index}`}
+      />
+      {showDropdown && (
+        <div className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-md shadow-md z-20 max-h-40 overflow-y-auto" data-testid={`dropdown-${index}`}>
+          {matching.map((item, i) => (
+            <button
+              key={item.id}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm ${
+                i === focusedIdx ? "bg-accent text-accent-foreground" : "hover-elevate"
+              }`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onSelectExisting(slot.id, item);
+                setIsFocused(false);
+              }}
+              data-testid={`suggestion-${item.id}-slot-${index}`}
+            >
+              <div className="w-6 h-6 rounded bg-muted flex items-center justify-center flex-shrink-0">
+                <Shirt className="h-3 w-3 text-muted-foreground" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="text-xs font-medium">{item.subCategory || item.category}</span>
+                {(item.color || item.brand) && (
+                  <span className="text-xs text-muted-foreground ml-1.5">
+                    {[item.color, item.brand].filter(Boolean).join(" / ")}
+                  </span>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Reconcile() {
   const [, params] = useRoute("/reconcile/:outfitId");
   const [, navigate] = useLocation();
@@ -149,6 +286,9 @@ export default function Reconcile() {
   const [expandedSlots, setExpandedSlots] = useState<Set<string>>(
     () => new Set(initialSlots.filter((s) => s.required).map((s) => s.id))
   );
+  const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
+  const [showExitDialog, setShowExitDialog] = useState(false);
+  const [hoveredDivider, setHoveredDivider] = useState<number | null>(null);
 
   const toggleExpanded = (slotId: string) => {
     setExpandedSlots((prev) => {
@@ -247,7 +387,7 @@ export default function Reconcile() {
     );
   };
 
-  const selectExistingItem = (slotId: string, item: Item) => {
+  const selectExistingItem = useCallback((slotId: string, item: Item) => {
     setSlots((prev) =>
       prev.map((s) =>
         s.id === slotId
@@ -255,13 +395,13 @@ export default function Reconcile() {
           : s
       )
     );
-  };
+  }, []);
 
-  const updateColorBrand = (slotId: string, colorBrand: string) => {
+  const updateColorBrand = useCallback((slotId: string, colorBrand: string) => {
     setSlots((prev) =>
-      prev.map((s) => (s.id === slotId ? { ...s, colorBrand } : s))
+      prev.map((s) => (s.id === slotId ? { ...s, colorBrand, existingItemId: null } : s))
     );
-  };
+  }, []);
 
   const skipSlot = (slotId: string) => {
     setSlots((prev) =>
@@ -287,7 +427,7 @@ export default function Reconcile() {
     );
   };
 
-  const addExtraSlot = () => {
+  const insertSlotAt = (position: number) => {
     const presetSlots = PRESETS[preset].slots;
     const newSlot: SlotState = {
       id: makeSlotId(),
@@ -300,7 +440,20 @@ export default function Reconcile() {
       existingItemId: null,
       skipped: false,
     };
-    setSlots((prev) => [...prev, newSlot]);
+    setSlots((prev) => {
+      const next = [...prev];
+      next.splice(position, 0, newSlot);
+      return next;
+    });
+    setExpandedSlots((prev) => {
+      const next = new Set(prev);
+      next.add(newSlot.id);
+      return next;
+    });
+  };
+
+  const addExtraSlot = () => {
+    insertSlotAt(slots.length);
   };
 
   const changeExtraSlotCategory = (slotId: string, category: string) => {
@@ -327,19 +480,16 @@ export default function Reconcile() {
     setSlots((prev) => prev.filter((s) => s.id !== slotId));
   };
 
-  const getMatchingItems = (category: string, subCategory?: string | null): Item[] => {
-    if (!existingItems) return [];
-    const usedIds = new Set(slots.filter((s) => s.existingItemId).map((s) => s.existingItemId));
-    return existingItems.filter((item) => {
-      if (usedIds.has(item.id)) return false;
-      if (item.category.toLowerCase() !== category.toLowerCase()) return false;
-      if (subCategory && item.subCategory && item.subCategory.toLowerCase() !== subCategory.toLowerCase()) return false;
-      return true;
-    });
-  };
-
   const filledCount = slots.filter((s) => !s.skipped && (s.selectedSubCategory || s.existingItemId)).length;
   const initialSlotCount = PRESETS[preset].slots.length;
+
+  const handleBack = () => {
+    if (filledCount > 0) {
+      setShowExitDialog(true);
+    } else {
+      navigate("/");
+    }
+  };
 
   if (outfitLoading) {
     return (
@@ -356,7 +506,7 @@ export default function Reconcile() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate("/")}
+            onClick={handleBack}
             data-testid="button-back"
           >
             <ArrowLeft className="h-5 w-5" />
@@ -370,15 +520,22 @@ export default function Reconcile() {
         </div>
       </header>
 
-      <main className="p-4 pb-28 space-y-3">
+      <main className="p-4 pb-28 space-y-0">
         {outfit && (
-          <Card className="overflow-hidden">
-            <div className="aspect-[16/9] bg-muted">
+          <Card
+            className="overflow-hidden mb-3 cursor-pointer relative group"
+            onClick={() => setImagePreviewOpen(true)}
+            data-testid="card-outfit-preview"
+          >
+            <div className="bg-muted max-h-48 overflow-hidden flex items-center justify-center">
               <img
                 src={outfit.fullImageUrl}
                 alt="Outfit"
-                className="w-full h-full object-cover"
+                className="w-full object-contain max-h-48"
               />
+            </div>
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+              <Maximize2 className="h-5 w-5 text-white opacity-0 group-hover:opacity-80 transition-opacity drop-shadow" />
             </div>
           </Card>
         )}
@@ -389,197 +546,174 @@ export default function Reconcile() {
           const isExtra = index >= initialSlotCount;
           const selectedExisting = existingItems?.find((i) => i.id === slot.existingItemId);
 
-          if (slot.skipped) {
-            return (
-              <Card
-                key={slot.id}
-                className="p-3 opacity-50 cursor-pointer"
-                onClick={() => unskipSlot(slot.id)}
-                data-testid={`card-slot-${index}`}
-              >
-                <div className="flex items-center gap-3">
-                  <SlotIcon category={slot.category} className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground line-through">{slot.label}</span>
-                  <span className="text-xs text-muted-foreground ml-auto">tap to add</span>
-                </div>
-              </Card>
-            );
-          }
-
           return (
-            <Card key={slot.id} className="p-3" data-testid={`card-slot-${index}`}>
-              <div
-                className="flex items-center gap-3 cursor-pointer"
-                onClick={() => toggleExpanded(slot.id)}
-              >
-                <SlotIcon category={slot.category} className="h-4 w-4 text-muted-foreground" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{slot.label}</span>
-                    {isFilled && (
-                      <Badge variant="secondary" className="text-xs">
-                        {selectedExisting ? (
-                          <>{selectedExisting.color ? `${selectedExisting.color} ` : ""}{selectedExisting.brand ? `${selectedExisting.brand} ` : ""}{slot.selectedSubCategory}</>
-                        ) : (
-                          <>{slot.colorBrand ? `${slot.colorBrand} ` : ""}{slot.selectedSubCategory}</>
-                        )}
-                      </Badge>
-                    )}
-                    {isFilled && selectedExisting && (
-                      <Badge variant="outline" className="text-xs">Existing</Badge>
-                    )}
+            <div key={slot.id}>
+              {index > 0 && (
+                <div
+                  className="relative flex items-center justify-center py-1 group/divider cursor-pointer"
+                  onMouseEnter={() => setHoveredDivider(index)}
+                  onMouseLeave={() => setHoveredDivider(null)}
+                  onClick={() => insertSlotAt(index)}
+                  data-testid={`divider-insert-${index}`}
+                >
+                  <div className={`absolute inset-x-4 h-px transition-colors ${hoveredDivider === index ? "bg-primary" : "bg-transparent"}`} />
+                  <div className={`relative z-10 flex items-center justify-center w-6 h-6 rounded-full border transition-all ${
+                    hoveredDivider === index
+                      ? "bg-primary border-primary text-primary-foreground scale-100 opacity-100"
+                      : "bg-background border-transparent text-transparent scale-75 opacity-0"
+                  }`}>
+                    <Plus className="h-3.5 w-3.5" />
                   </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  {isFilled && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => { e.stopPropagation(); clearSlot(slot.id); }}
-                      data-testid={`button-clear-${index}`}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                  {!slot.required && !isExtra && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-muted-foreground"
-                      onClick={(e) => { e.stopPropagation(); skipSlot(slot.id); }}
-                      data-testid={`button-skip-${index}`}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                  {isExtra && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-muted-foreground"
-                      onClick={(e) => { e.stopPropagation(); removeExtraSlot(slot.id); }}
-                      data-testid={`button-remove-extra-${index}`}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                  {isExpanded ? (
-                    <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                  )}
-                </div>
-              </div>
-
-              {isExpanded && (
-                <div className="mt-3 space-y-3">
-                  {isExtra && (
-                    <div className="flex gap-1.5 flex-wrap">
-                      {PRESETS[preset].slots.map((ps) => (
-                        <button
-                          key={ps.category}
-                          className={`relative px-2.5 py-1 rounded-full text-xs font-medium ${
-                            slot.category === ps.category
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-muted text-muted-foreground hover-elevate"
-                          }`}
-                          onClick={() => changeExtraSlotCategory(slot.id, ps.category)}
-                          data-testid={`chip-category-${ps.category}-${index}`}
-                        >
-                          {ps.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1.5">Select type</p>
-                    <div className="flex gap-1.5 flex-wrap">
-                      {slot.subCategories.map((sub) => (
-                        <button
-                          key={sub}
-                          className={`relative px-2.5 py-1.5 rounded-full text-xs font-medium ${
-                            slot.selectedSubCategory === sub && !slot.existingItemId
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-muted text-foreground hover-elevate"
-                          }`}
-                          onClick={() => selectSubCategory(slot.id, sub)}
-                          data-testid={`chip-${sub.replace(/\s+/g, "-").toLowerCase()}-${index}`}
-                        >
-                          {sub}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {slot.selectedSubCategory && !slot.existingItemId && (() => {
-                    const matchingItems = getMatchingItems(slot.category, slot.selectedSubCategory);
-                    return (
-                      <>
-                        {matchingItems.length > 0 && (
-                          <div>
-                            <p className="text-xs text-muted-foreground mb-1.5">From your wardrobe</p>
-                            <div className="flex gap-2 overflow-x-auto pb-1">
-                              {matchingItems.map((item) => (
-                                <button
-                                  key={item.id}
-                                  className={`relative flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg border text-left ${
-                                    slot.existingItemId === item.id
-                                      ? "border-primary bg-primary/5"
-                                      : "border-border hover-elevate"
-                                  }`}
-                                  onClick={() => selectExistingItem(slot.id, item)}
-                                  data-testid={`existing-${item.id}-slot-${index}`}
-                                >
-                                  <div className="w-8 h-8 rounded bg-muted flex items-center justify-center flex-shrink-0">
-                                    {item.imageUrl ? (
-                                      <img src={item.imageUrl} alt="" className="w-full h-full object-cover rounded" />
-                                    ) : (
-                                      <Shirt className="h-4 w-4 text-muted-foreground" />
-                                    )}
-                                  </div>
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-medium truncate max-w-[80px]">
-                                      {item.subCategory || item.category}
-                                    </p>
-                                    {(item.brand || item.color) && (
-                                      <p className="text-xs text-muted-foreground truncate max-w-[80px]">
-                                        {[item.color, item.brand].filter(Boolean).join(" / ")}
-                                      </p>
-                                    )}
-                                  </div>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        <div>
-                          <Input
-                            placeholder="Colour / Brand (e.g. Black / Nike)"
-                            value={slot.colorBrand}
-                            onChange={(e) => updateColorBrand(slot.id, e.target.value)}
-                            className="text-sm"
-                            data-testid={`input-color-brand-${index}`}
-                          />
-                        </div>
-                      </>
-                    );
-                  })()}
                 </div>
               )}
-            </Card>
+
+              {slot.skipped ? (
+                <Card
+                  className="p-3 opacity-50 cursor-pointer"
+                  onClick={() => unskipSlot(slot.id)}
+                  data-testid={`card-slot-${index}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <SlotIcon category={slot.category} className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground line-through">{slot.label}</span>
+                    <span className="text-xs text-muted-foreground ml-auto">tap to add</span>
+                  </div>
+                </Card>
+              ) : (
+                <Card className="p-3" data-testid={`card-slot-${index}`}>
+                  <div
+                    className="flex items-center gap-3 cursor-pointer"
+                    onClick={() => toggleExpanded(slot.id)}
+                  >
+                    <SlotIcon category={slot.category} className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{slot.label}</span>
+                        {isFilled && (
+                          <Badge variant="secondary" className="text-xs">
+                            {selectedExisting ? (
+                              <>{selectedExisting.color ? `${selectedExisting.color} ` : ""}{selectedExisting.brand ? `${selectedExisting.brand} ` : ""}{slot.selectedSubCategory}</>
+                            ) : (
+                              <>{slot.colorBrand ? `${slot.colorBrand} ` : ""}{slot.selectedSubCategory}</>
+                            )}
+                          </Badge>
+                        )}
+                        {isFilled && selectedExisting && (
+                          <Badge variant="outline" className="text-xs">Existing</Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {isFilled && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => { e.stopPropagation(); clearSlot(slot.id); }}
+                          data-testid={`button-clear-${index}`}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {!slot.required && !isExtra && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground"
+                          onClick={(e) => { e.stopPropagation(); skipSlot(slot.id); }}
+                          data-testid={`button-skip-${index}`}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {isExtra && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground"
+                          onClick={(e) => { e.stopPropagation(); removeExtraSlot(slot.id); }}
+                          data-testid={`button-remove-extra-${index}`}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {isExpanded ? (
+                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="mt-3 space-y-3">
+                      {isExtra && (
+                        <div className="flex gap-1.5 flex-wrap">
+                          {PRESETS[preset].slots.map((ps) => (
+                            <button
+                              key={ps.category}
+                              className={`relative px-2.5 py-1 rounded-full text-xs font-medium ${
+                                slot.category === ps.category
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-muted text-muted-foreground hover-elevate"
+                              }`}
+                              onClick={() => changeExtraSlotCategory(slot.id, ps.category)}
+                              data-testid={`chip-category-${ps.category}-${index}`}
+                            >
+                              {ps.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1.5">Select type</p>
+                        <div className="flex gap-1.5 flex-wrap">
+                          {slot.subCategories.map((sub) => (
+                            <button
+                              key={sub}
+                              className={`relative px-2.5 py-1.5 rounded-full text-xs font-medium ${
+                                slot.selectedSubCategory === sub && !slot.existingItemId
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-muted text-foreground hover-elevate"
+                              }`}
+                              onClick={() => selectSubCategory(slot.id, sub)}
+                              data-testid={`chip-${sub.replace(/\s+/g, "-").toLowerCase()}-${index}`}
+                            >
+                              {sub}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {slot.selectedSubCategory && !slot.existingItemId && (
+                        <SearchInput
+                          slot={slot}
+                          index={index}
+                          existingItems={existingItems}
+                          slots={slots}
+                          onSelectExisting={selectExistingItem}
+                          onUpdateColorBrand={updateColorBrand}
+                        />
+                      )}
+                    </div>
+                  )}
+                </Card>
+              )}
+            </div>
           );
         })}
 
-        <Button
-          variant="ghost"
-          className="w-full gap-2 text-muted-foreground"
-          onClick={addExtraSlot}
-          data-testid="button-add-slot"
-        >
-          <Plus className="h-4 w-4" />
-          Add another item
-        </Button>
+        <div className="pt-1">
+          <Button
+            variant="ghost"
+            className="w-full gap-2 text-muted-foreground"
+            onClick={addExtraSlot}
+            data-testid="button-add-slot"
+          >
+            <Plus className="h-4 w-4" />
+            Add another item
+          </Button>
+        </div>
       </main>
 
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/95 backdrop-blur border-t">
@@ -605,6 +739,42 @@ export default function Reconcile() {
           </Button>
         </div>
       </div>
+
+      <Dialog open={imagePreviewOpen} onOpenChange={setImagePreviewOpen}>
+        <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 bg-black/95 border-none overflow-hidden flex items-center justify-center" aria-describedby={undefined}>
+          <DialogTitle className="sr-only">Outfit Preview</DialogTitle>
+          {outfit && (
+            <img
+              src={outfit.fullImageUrl}
+              alt="Outfit full preview"
+              className="max-w-full max-h-[90vh] object-contain"
+              data-testid="img-full-preview"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={showExitDialog} onOpenChange={setShowExitDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Save tagged items?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have {filledCount} item{filledCount !== 1 ? "s" : ""} tagged. Would you like to save before leaving?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => navigate("/")} data-testid="button-discard">
+              Discard
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => saveMutation.mutate()}
+              data-testid="button-save-exit"
+            >
+              Save
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

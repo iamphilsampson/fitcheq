@@ -22,6 +22,7 @@ export interface IStorage {
   deleteItem(id: number): Promise<void>;
 
   // Outfits
+  getAllOutfitsWithCounts(): Promise<(Outfit & { itemCount: number })[]>;
   getAllOutfits(): Promise<Outfit[]>;
   getOutfit(id: number): Promise<Outfit | undefined>;
   getOutfitWithItems(id: number): Promise<(Outfit & { items: Item[] }) | undefined>;
@@ -79,6 +80,23 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Outfits
+  async getAllOutfitsWithCounts(): Promise<(Outfit & { itemCount: number })[]> {
+    const result = await db
+      .select({
+        id: outfits.id,
+        dateWorn: outfits.dateWorn,
+        fullImageUrl: outfits.fullImageUrl,
+        notes: outfits.notes,
+        createdAt: outfits.createdAt,
+        itemCount: sql<number>`cast(count(${outfitItems.id}) as int)`,
+      })
+      .from(outfits)
+      .leftJoin(outfitItems, eq(outfits.id, outfitItems.outfitId))
+      .groupBy(outfits.id)
+      .orderBy(desc(outfits.dateWorn));
+    return result;
+  }
+
   async getAllOutfits(): Promise<Outfit[]> {
     return db.select().from(outfits).orderBy(desc(outfits.dateWorn));
   }

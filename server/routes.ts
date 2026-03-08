@@ -85,7 +85,7 @@ export async function registerRoutes(
   // Outfits endpoints
   app.get("/api/outfits", async (req, res) => {
     try {
-      const outfits = await storage.getAllOutfits();
+      const outfits = await storage.getAllOutfitsWithCounts();
       res.json(outfits);
     } catch (error) {
       console.error("Error fetching outfits:", error);
