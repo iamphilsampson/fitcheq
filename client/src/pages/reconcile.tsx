@@ -101,9 +101,14 @@ interface SlotState {
   required: boolean;
   subCategories: string[];
   selectedSubCategory: string | null;
-  color: string;
+  colorBrand: string;
   existingItemId: number | null;
   skipped: boolean;
+}
+
+function parseColorBrand(input: string): { color: string; brand: string } {
+  const parts = input.split("/").map((s) => s.trim());
+  return { color: parts[0] || "", brand: parts[1] || "" };
 }
 
 function getPreset(): "male" | "female" {
@@ -123,7 +128,7 @@ function buildInitialSlots(preset: "male" | "female"): SlotState[] {
     required: s.required,
     subCategories: s.subCategories,
     selectedSubCategory: null,
-    color: "",
+    colorBrand: "",
     existingItemId: null,
     skipped: false,
   }));
@@ -139,8 +144,20 @@ export default function Reconcile() {
   const detectedItemsParam = searchParams.get("items");
 
   const preset = getPreset();
-  const [slots, setSlots] = useState<SlotState[]>(() => buildInitialSlots(preset));
-  const [expandedSlot, setExpandedSlot] = useState<string | null>(null);
+  const [initialSlots] = useState<SlotState[]>(() => buildInitialSlots(preset));
+  const [slots, setSlots] = useState<SlotState[]>(initialSlots);
+  const [expandedSlots, setExpandedSlots] = useState<Set<string>>(
+    () => new Set(initialSlots.filter((s) => s.required).map((s) => s.id))
+  );
+
+  const toggleExpanded = (slotId: string) => {
+    setExpandedSlots((prev) => {
+      const next = new Set(prev);
+      if (next.has(slotId)) next.delete(slotId);
+      else next.add(slotId);
+      return next;
+    });
+  };
 
   const { data: outfit, isLoading: outfitLoading } = useQuery<Outfit>({
     queryKey: ["/api/outfits", outfitId],
@@ -165,7 +182,7 @@ export default function Reconcile() {
               updated[slotIdx] = {
                 ...updated[slotIdx],
                 selectedSubCategory: d.subCategory,
-                color: d.color,
+                colorBrand: d.color,
               };
             }
           }
@@ -186,11 +203,13 @@ export default function Reconcile() {
         if (slot.existingItemId) {
           itemIds.push(slot.existingItemId);
         } else if (slot.selectedSubCategory) {
-          const desc = `${slot.color} ${slot.selectedSubCategory}`.trim();
+          const { color, brand } = parseColorBrand(slot.colorBrand);
+          const desc = `${color} ${slot.selectedSubCategory}`.trim();
           const response = await apiRequest("POST", "/api/items", {
             category: slot.category,
             subCategory: slot.selectedSubCategory,
-            color: slot.color || null,
+            color: color || null,
+            brand: brand || null,
             description: desc || null,
           });
           const newItem = response as Item;
@@ -232,15 +251,15 @@ export default function Reconcile() {
     setSlots((prev) =>
       prev.map((s) =>
         s.id === slotId
-          ? { ...s, existingItemId: item.id, selectedSubCategory: item.subCategory || item.category, color: item.color || "", skipped: false }
+          ? { ...s, existingItemId: item.id, selectedSubCategory: item.subCategory || item.category, colorBrand: [item.color, item.brand].filter(Boolean).join(" / "), skipped: false }
           : s
       )
     );
   };
 
-  const updateColor = (slotId: string, color: string) => {
+  const updateColorBrand = (slotId: string, colorBrand: string) => {
     setSlots((prev) =>
-      prev.map((s) => (s.id === slotId ? { ...s, color } : s))
+      prev.map((s) => (s.id === slotId ? { ...s, colorBrand } : s))
     );
   };
 
@@ -248,7 +267,7 @@ export default function Reconcile() {
     setSlots((prev) =>
       prev.map((s) =>
         s.id === slotId
-          ? { ...s, skipped: true, selectedSubCategory: null, existingItemId: null, color: "" }
+          ? { ...s, skipped: true, selectedSubCategory: null, existingItemId: null, colorBrand: "" }
           : s
       )
     );
@@ -263,7 +282,7 @@ export default function Reconcile() {
   const clearSlot = (slotId: string) => {
     setSlots((prev) =>
       prev.map((s) =>
-        s.id === slotId ? { ...s, selectedSubCategory: null, existingItemId: null, color: "", skipped: false } : s
+        s.id === slotId ? { ...s, selectedSubCategory: null, existingItemId: null, colorBrand: "", skipped: false } : s
       )
     );
   };
@@ -277,7 +296,7 @@ export default function Reconcile() {
       required: false,
       subCategories: presetSlots[0].subCategories,
       selectedSubCategory: null,
-      color: "",
+      colorBrand: "",
       existingItemId: null,
       skipped: false,
     };
@@ -297,7 +316,7 @@ export default function Reconcile() {
               subCategories: presetSlot.subCategories,
               selectedSubCategory: null,
               existingItemId: null,
-              color: "",
+              colorBrand: "",
             }
           : s
       )
@@ -308,12 +327,15 @@ export default function Reconcile() {
     setSlots((prev) => prev.filter((s) => s.id !== slotId));
   };
 
-  const getMatchingItems = (category: string): Item[] => {
+  const getMatchingItems = (category: string, subCategory?: string | null): Item[] => {
     if (!existingItems) return [];
     const usedIds = new Set(slots.filter((s) => s.existingItemId).map((s) => s.existingItemId));
-    return existingItems.filter(
-      (item) => item.category.toLowerCase() === category.toLowerCase() && !usedIds.has(item.id)
-    );
+    return existingItems.filter((item) => {
+      if (usedIds.has(item.id)) return false;
+      if (item.category.toLowerCase() !== category.toLowerCase()) return false;
+      if (subCategory && item.subCategory && item.subCategory.toLowerCase() !== subCategory.toLowerCase()) return false;
+      return true;
+    });
   };
 
   const filledCount = slots.filter((s) => !s.skipped && (s.selectedSubCategory || s.existingItemId)).length;
@@ -362,8 +384,7 @@ export default function Reconcile() {
         )}
 
         {slots.map((slot, index) => {
-          const matchingItems = getMatchingItems(slot.category);
-          const isExpanded = expandedSlot === slot.id;
+          const isExpanded = expandedSlots.has(slot.id);
           const isFilled = !!(slot.selectedSubCategory || slot.existingItemId);
           const isExtra = index >= initialSlotCount;
           const selectedExisting = existingItems?.find((i) => i.id === slot.existingItemId);
@@ -389,7 +410,7 @@ export default function Reconcile() {
             <Card key={slot.id} className="p-3" data-testid={`card-slot-${index}`}>
               <div
                 className="flex items-center gap-3 cursor-pointer"
-                onClick={() => setExpandedSlot(isExpanded ? null : slot.id)}
+                onClick={() => toggleExpanded(slot.id)}
               >
                 <SlotIcon category={slot.category} className="h-4 w-4 text-muted-foreground" />
                 <div className="flex-1 min-w-0">
@@ -398,9 +419,9 @@ export default function Reconcile() {
                     {isFilled && (
                       <Badge variant="secondary" className="text-xs">
                         {selectedExisting ? (
-                          <>{selectedExisting.brand ? `${selectedExisting.brand} ` : ""}{slot.selectedSubCategory}</>
+                          <>{selectedExisting.color ? `${selectedExisting.color} ` : ""}{selectedExisting.brand ? `${selectedExisting.brand} ` : ""}{slot.selectedSubCategory}</>
                         ) : (
-                          <>{slot.color ? `${slot.color} ` : ""}{slot.selectedSubCategory}</>
+                          <>{slot.colorBrand ? `${slot.colorBrand} ` : ""}{slot.selectedSubCategory}</>
                         )}
                       </Badge>
                     )}
@@ -413,7 +434,7 @@ export default function Reconcile() {
                   {isFilled && (
                     <Button
                       variant="ghost"
-                      size="sm"
+                      size="icon"
                       onClick={(e) => { e.stopPropagation(); clearSlot(slot.id); }}
                       data-testid={`button-clear-${index}`}
                     >
@@ -423,7 +444,7 @@ export default function Reconcile() {
                   {!slot.required && !isExtra && (
                     <Button
                       variant="ghost"
-                      size="sm"
+                      size="icon"
                       className="text-muted-foreground"
                       onClick={(e) => { e.stopPropagation(); skipSlot(slot.id); }}
                       data-testid={`button-skip-${index}`}
@@ -434,7 +455,7 @@ export default function Reconcile() {
                   {isExtra && (
                     <Button
                       variant="ghost"
-                      size="sm"
+                      size="icon"
                       className="text-muted-foreground"
                       onClick={(e) => { e.stopPropagation(); removeExtraSlot(slot.id); }}
                       data-testid={`button-remove-extra-${index}`}
@@ -471,48 +492,8 @@ export default function Reconcile() {
                     </div>
                   )}
 
-                  {matchingItems.length > 0 && (
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1.5">From your wardrobe</p>
-                      <div className="flex gap-2 overflow-x-auto pb-1">
-                        {matchingItems.map((item) => (
-                          <button
-                            key={item.id}
-                            className={`relative flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg border text-left ${
-                              slot.existingItemId === item.id
-                                ? "border-primary bg-primary/5"
-                                : "border-border hover-elevate"
-                            }`}
-                            onClick={() => selectExistingItem(slot.id, item)}
-                            data-testid={`existing-${item.id}-slot-${index}`}
-                          >
-                            <div className="w-8 h-8 rounded bg-muted flex items-center justify-center flex-shrink-0">
-                              {item.imageUrl ? (
-                                <img src={item.imageUrl} alt="" className="w-full h-full object-cover rounded" />
-                              ) : (
-                                <Shirt className="h-4 w-4 text-muted-foreground" />
-                              )}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-xs font-medium truncate max-w-[80px]">
-                                {item.subCategory || item.category}
-                              </p>
-                              {(item.brand || item.color) && (
-                                <p className="text-xs text-muted-foreground truncate max-w-[80px]">
-                                  {item.brand || item.color}
-                                </p>
-                              )}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
                   <div>
-                    <p className="text-xs text-muted-foreground mb-1.5">
-                      {matchingItems.length > 0 ? "Or add new" : "Select type"}
-                    </p>
+                    <p className="text-xs text-muted-foreground mb-1.5">Select type</p>
                     <div className="flex gap-1.5 flex-wrap">
                       {slot.subCategories.map((sub) => (
                         <button
@@ -531,17 +512,59 @@ export default function Reconcile() {
                     </div>
                   </div>
 
-                  {slot.selectedSubCategory && !slot.existingItemId && (
-                    <div>
-                      <Input
-                        placeholder="Color (e.g. Black, Navy)"
-                        value={slot.color}
-                        onChange={(e) => updateColor(slot.id, e.target.value)}
-                        className="h-8 text-sm"
-                        data-testid={`input-color-${index}`}
-                      />
-                    </div>
-                  )}
+                  {slot.selectedSubCategory && !slot.existingItemId && (() => {
+                    const matchingItems = getMatchingItems(slot.category, slot.selectedSubCategory);
+                    return (
+                      <>
+                        {matchingItems.length > 0 && (
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1.5">From your wardrobe</p>
+                            <div className="flex gap-2 overflow-x-auto pb-1">
+                              {matchingItems.map((item) => (
+                                <button
+                                  key={item.id}
+                                  className={`relative flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg border text-left ${
+                                    slot.existingItemId === item.id
+                                      ? "border-primary bg-primary/5"
+                                      : "border-border hover-elevate"
+                                  }`}
+                                  onClick={() => selectExistingItem(slot.id, item)}
+                                  data-testid={`existing-${item.id}-slot-${index}`}
+                                >
+                                  <div className="w-8 h-8 rounded bg-muted flex items-center justify-center flex-shrink-0">
+                                    {item.imageUrl ? (
+                                      <img src={item.imageUrl} alt="" className="w-full h-full object-cover rounded" />
+                                    ) : (
+                                      <Shirt className="h-4 w-4 text-muted-foreground" />
+                                    )}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-medium truncate max-w-[80px]">
+                                      {item.subCategory || item.category}
+                                    </p>
+                                    {(item.brand || item.color) && (
+                                      <p className="text-xs text-muted-foreground truncate max-w-[80px]">
+                                        {[item.color, item.brand].filter(Boolean).join(" / ")}
+                                      </p>
+                                    )}
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <div>
+                          <Input
+                            placeholder="Colour / Brand (e.g. Black / Nike)"
+                            value={slot.colorBrand}
+                            onChange={(e) => updateColorBrand(slot.id, e.target.value)}
+                            className="text-sm"
+                            data-testid={`input-color-brand-${index}`}
+                          />
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
             </Card>
