@@ -32,6 +32,7 @@ export interface IStorage {
 
   // Outfit Items (linking)
   addItemsToOutfit(outfitId: number, itemIds: number[]): Promise<void>;
+  replaceItemsOnOutfit(outfitId: number, itemIds: number[]): Promise<void>;
   removeItemFromOutfit(outfitId: number, itemId: number): Promise<void>;
   getOutfitsByItem(itemId: number): Promise<Outfit[]>;
 }
@@ -141,6 +142,13 @@ export class DatabaseStorage implements IStorage {
   async addItemsToOutfit(outfitId: number, itemIds: number[]): Promise<void> {
     if (itemIds.length === 0) return;
     
+    const values = itemIds.map((itemId) => ({ outfitId, itemId }));
+    await db.insert(outfitItems).values(values);
+  }
+
+  async replaceItemsOnOutfit(outfitId: number, itemIds: number[]): Promise<void> {
+    await db.delete(outfitItems).where(eq(outfitItems.outfitId, outfitId));
+    if (itemIds.length === 0) return;
     const values = itemIds.map((itemId) => ({ outfitId, itemId }));
     await db.insert(outfitItems).values(values);
   }

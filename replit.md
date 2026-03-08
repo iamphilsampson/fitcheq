@@ -37,7 +37,7 @@ The frontend follows a page-based structure with components organized by feature
 Key API endpoints:
 - `/api/items` - CRUD operations for individual clothing pieces (GET, POST, PATCH, DELETE)
 - `/api/outfits` - CRUD operations for outfit photos with date tracking; GET returns itemCount per outfit (GET, POST, PATCH, DELETE)
-- `/api/outfits/:id/items` - Link items to outfits (POST)
+- `/api/outfits/:id/items` - Link items to outfits (POST), replace all items (PUT), remove single item (DELETE /:itemId)
 - `/api/uploads/request-url` - Presigned URL generation for direct-to-storage uploads
 - `/api/outfits/analyze` - AI-powered clothing detection from images (GPT-4o Vision)
 

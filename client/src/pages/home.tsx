@@ -233,12 +233,9 @@ export default function Home() {
               <div className="space-y-4">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="space-y-2">
-                    <Skeleton className="h-6 w-24" />
-                    <div className="grid grid-cols-3 gap-2">
-                      {[1, 2, 3].map((j) => (
-                        <Skeleton key={j} className="aspect-square rounded-md" />
-                      ))}
-                    </div>
+                    <Skeleton className="h-5 w-24" />
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-3/4" />
                   </div>
                 ))}
               </div>
@@ -249,52 +246,42 @@ export default function Home() {
                 description="Add your first outfit to start building your wardrobe"
               />
             ) : (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {Object.entries(groupedItems || {}).map(([category, categoryItems]) => (
                   <div key={category}>
-                    <div className="flex items-center justify-between mb-3">
-                      <h2 className="font-semibold text-foreground">{category}</h2>
-                      <span className="text-sm text-muted-foreground">
-                        {categoryItems.length} items
+                    <div className="flex items-center justify-between mb-1">
+                      <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{category}</h2>
+                      <span className="text-xs text-muted-foreground">
+                        {categoryItems.length}
                       </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="space-y-0">
                       {categoryItems.map((item) => (
                         <Link key={item.id} href={`/items/${item.id}`}>
-                          <Card
-                            className="overflow-hidden hover-elevate cursor-pointer"
-                            data-testid={`card-item-${item.id}`}
+                          <div
+                            className="flex items-center gap-2 py-2 px-1 rounded hover-elevate cursor-pointer"
+                            data-testid={`item-row-${item.id}`}
                           >
-                            <div className="aspect-square bg-muted relative">
-                              {item.imageUrl ? (
-                                <img
-                                  src={item.imageUrl}
-                                  alt={item.description || item.category}
-                                  className="w-full h-full object-cover"
-                                />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center">
-                                  <Shirt className="h-8 w-8 text-muted-foreground" />
-                                </div>
-                              )}
-                              {item.color && (
-                                <div
-                                  className="absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-white shadow-sm"
-                                  style={{ backgroundColor: item.color.toLowerCase() }}
-                                />
-                              )}
-                            </div>
-                            <div className="p-2">
-                              <p className="text-xs font-medium truncate">
-                                {item.subCategory || item.category}
-                              </p>
-                              {item.brand && (
-                                <p className="text-xs text-muted-foreground truncate">
-                                  {item.brand}
-                                </p>
-                              )}
-                            </div>
-                          </Card>
+                            {item.color && (
+                              <span
+                                className="w-2.5 h-2.5 rounded-full border flex-shrink-0"
+                                style={{ backgroundColor: item.color.toLowerCase() }}
+                              />
+                            )}
+                            <span className="text-sm font-medium truncate">
+                              {item.subCategory || item.category}
+                            </span>
+                            {item.brand && (
+                              <span className="text-xs text-muted-foreground truncate">
+                                {item.brand}
+                              </span>
+                            )}
+                            {item.color && !item.brand && (
+                              <span className="text-xs text-muted-foreground truncate">
+                                {item.color}
+                              </span>
+                            )}
+                          </div>
                         </Link>
                       ))}
                     </div>

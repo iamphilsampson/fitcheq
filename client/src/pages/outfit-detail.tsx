@@ -1,10 +1,9 @@
 import { useState, useRef } from "react";
 import { useRoute, useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Calendar, Trash2, Shirt, Loader2, Camera, Tag } from "lucide-react";
+import { ArrowLeft, Trash2, Loader2, Camera, Tag, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
@@ -54,6 +53,24 @@ export default function OutfitDetail() {
     onError: (error) => {
       toast({
         title: "Failed to delete",
+        description: error instanceof Error ? error.message : "Something went wrong",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const removeItemMutation = useMutation({
+    mutationFn: async (itemId: number) => {
+      await apiRequest("DELETE", `/api/outfits/${outfitId}/items/${itemId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/outfits", outfitId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/outfits"] });
+      toast({ title: "Item removed", description: "Item unlinked from this outfit." });
+    },
+    onError: (error) => {
+      toast({
+        title: "Failed to remove",
         description: error instanceof Error ? error.message : "Something went wrong",
         variant: "destructive",
       });
@@ -111,7 +128,7 @@ export default function OutfitDetail() {
       <div className="min-h-screen bg-background">
         <header className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b">
           <div className="px-4 py-2 flex items-center gap-3">
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate("/")}>
+            <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <Skeleton className="h-5 w-32" />
@@ -119,11 +136,8 @@ export default function OutfitDetail() {
         </header>
         <main className="p-4 space-y-4">
           <Skeleton className="aspect-[3/4] rounded-lg" />
-          <div className="grid grid-cols-4 gap-2">
-            {[1, 2, 3, 4].map((i) => (
-              <Skeleton key={i} className="aspect-square rounded-md" />
-            ))}
-          </div>
+          <Skeleton className="h-4 w-48" />
+          <Skeleton className="h-4 w-32" />
         </main>
       </div>
     );
@@ -133,7 +147,6 @@ export default function OutfitDetail() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
           <h2 className="font-semibold">Outfit not found</h2>
           <Button variant="link" onClick={() => navigate("/")}>
             Go back home
@@ -167,19 +180,17 @@ export default function OutfitDetail() {
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8"
               onClick={() => navigate("/")}
               data-testid="button-back"
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <h1 className="text-base font-semibold text-foreground">Outfit Details</h1>
+            <h1 className="text-base font-semibold text-foreground">{formattedDate}</h1>
           </div>
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8"
               onClick={() => navigate(`/reconcile/${outfitId}`)}
               data-testid="button-tag-items"
             >
@@ -190,7 +201,7 @@ export default function OutfitDetail() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 text-destructive"
+                  className="text-destructive"
                   data-testid="button-delete"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -241,40 +252,29 @@ export default function OutfitDetail() {
           </div>
           <Button
             variant="secondary"
-            size="sm"
-            className="absolute bottom-3 right-3 rounded-full shadow-md gap-1.5"
+            size="icon"
+            className="absolute top-3 right-3 rounded-full shadow-md"
             onClick={() => fileInputRef.current?.click()}
             disabled={isReuploading}
             data-testid="button-reupload"
           >
-            <Camera className="h-3.5 w-3.5" />
-            Change Photo
+            <Camera className="h-4 w-4" />
           </Button>
         </Card>
 
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium text-sm text-foreground">{formattedDate}</span>
-          </div>
-
-          {outfit.notes && (
-            <p className="text-sm text-muted-foreground">{outfit.notes}</p>
-          )}
-        </div>
+        {outfit.notes && (
+          <p className="text-sm text-muted-foreground">{outfit.notes}</p>
+        )}
 
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Shirt className="h-4 w-4 text-muted-foreground" />
-              <h3 className="font-semibold text-sm text-foreground">
-                {outfit.items?.length || 0} Items
-              </h3>
-            </div>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-semibold text-sm text-foreground">
+              {outfit.items?.length || 0} Items
+            </h3>
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-xs gap-1"
+              className="min-h-7 text-xs gap-1"
               onClick={() => navigate(`/reconcile/${outfitId}`)}
               data-testid="button-edit-items"
             >
@@ -284,38 +284,42 @@ export default function OutfitDetail() {
           </div>
 
           {outfit.items?.length ? (
-            <div className="grid grid-cols-4 gap-2">
+            <div className="space-y-0.5">
               {outfit.items.map((item) => (
-                <Link key={item.id} href={`/items/${item.id}`}>
-                  <Card
-                    className="overflow-hidden hover-elevate cursor-pointer"
-                    data-testid={`card-item-${item.id}`}
+                <div
+                  key={item.id}
+                  className="flex items-center gap-2 group"
+                  data-testid={`item-row-${item.id}`}
+                >
+                  <Link
+                    href={`/items/${item.id}`}
+                    className="flex-1 min-w-0 flex items-center gap-2 py-2 px-1 rounded hover-elevate cursor-pointer"
+                    data-testid={`link-item-${item.id}`}
                   >
-                    <div className="aspect-square bg-muted relative">
-                      {item.imageUrl ? (
-                        <img
-                          src={item.imageUrl}
-                          alt={item.description || item.category}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Shirt className="h-6 w-6 text-muted-foreground" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="p-1.5">
-                      <p className="text-xs font-medium truncate">
-                        {item.subCategory || item.category}
-                      </p>
-                    </div>
-                  </Card>
-                </Link>
+                    <span className="text-sm font-medium truncate">
+                      {item.subCategory || item.category}
+                    </span>
+                    {(item.color || item.brand) && (
+                      <span className="text-xs text-muted-foreground truncate">
+                        {[item.color, item.brand].filter(Boolean).join(" / ")}
+                      </span>
+                    )}
+                  </Link>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground flex-shrink-0"
+                    onClick={() => removeItemMutation.mutate(item.id)}
+                    disabled={removeItemMutation.isPending}
+                    data-testid={`button-remove-item-${item.id}`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               ))}
             </div>
           ) : (
             <div className="py-6 text-center">
-              <Shirt className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">
                 No items tagged yet
               </p>

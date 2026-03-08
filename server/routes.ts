@@ -164,6 +164,37 @@ export async function registerRoutes(
     }
   });
 
+  // Replace all items on outfit (clear + add)
+  app.put("/api/outfits/:id/items", async (req, res) => {
+    try {
+      const outfitId = parseInt(req.params.id);
+      const { itemIds } = req.body;
+
+      if (!Array.isArray(itemIds)) {
+        return res.status(400).json({ error: "itemIds must be an array" });
+      }
+
+      await storage.replaceItemsOnOutfit(outfitId, itemIds);
+      res.status(200).json({ success: true });
+    } catch (error) {
+      console.error("Error replacing items on outfit:", error);
+      res.status(500).json({ error: "Failed to replace items" });
+    }
+  });
+
+  // Remove single item from outfit
+  app.delete("/api/outfits/:id/items/:itemId", async (req, res) => {
+    try {
+      const outfitId = parseInt(req.params.id);
+      const itemId = parseInt(req.params.itemId);
+      await storage.removeItemFromOutfit(outfitId, itemId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error removing item from outfit:", error);
+      res.status(500).json({ error: "Failed to remove item" });
+    }
+  });
+
   // AI Outfit Analysis endpoint
   app.post("/api/outfits/analyze", async (req, res) => {
     try {

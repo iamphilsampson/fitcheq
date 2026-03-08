@@ -271,6 +271,10 @@ function SearchInput({
   );
 }
 
+interface OutfitWithItems extends Outfit {
+  items: Item[];
+}
+
 export default function Reconcile() {
   const [, params] = useRoute("/reconcile/:outfitId");
   const [, navigate] = useLocation();
@@ -281,14 +285,14 @@ export default function Reconcile() {
   const detectedItemsParam = searchParams.get("items");
 
   const preset = getPreset();
-  const [initialSlots] = useState<SlotState[]>(() => buildInitialSlots(preset));
-  const [slots, setSlots] = useState<SlotState[]>(initialSlots);
+  const [slots, setSlots] = useState<SlotState[]>(() => buildInitialSlots(preset));
   const [expandedSlots, setExpandedSlots] = useState<Set<string>>(
-    () => new Set(initialSlots.filter((s) => s.required).map((s) => s.id))
+    () => new Set(slots.filter((s) => s.required).map((s) => s.id))
   );
   const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
   const [showExitDialog, setShowExitDialog] = useState(false);
   const [hoveredDivider, setHoveredDivider] = useState<number | null>(null);
+  const [loadedExisting, setLoadedExisting] = useState(false);
 
   const toggleExpanded = (slotId: string) => {
     setExpandedSlots((prev) => {
@@ -299,7 +303,7 @@ export default function Reconcile() {
     });
   };
 
-  const { data: outfit, isLoading: outfitLoading } = useQuery<Outfit>({
+  const { data: outfit, isLoading: outfitLoading } = useQuery<OutfitWithItems>({
     queryKey: ["/api/outfits", outfitId],
     enabled: !!outfitId,
   });
@@ -307,6 +311,64 @@ export default function Reconcile() {
   const { data: existingItems } = useQuery<Item[]>({
     queryKey: ["/api/items"],
   });
+
+  useEffect(() => {
+    if (!outfit || !outfit.items || loadedExisting) return;
+    if (outfit.items.length === 0) {
+      setLoadedExisting(true);
+      return;
+    }
+
+    setSlots((prev) => {
+      let updated = [...prev];
+      const expanded = new Set(expandedSlots);
+      const remainingItems = [...outfit.items];
+
+      for (const item of [...remainingItems]) {
+        const slotIdx = updated.findIndex(
+          (s) =>
+            s.category.toLowerCase() === item.category.toLowerCase() &&
+            !s.existingItemId &&
+            !s.selectedSubCategory
+        );
+        if (slotIdx >= 0) {
+          updated[slotIdx] = {
+            ...updated[slotIdx],
+            existingItemId: item.id,
+            selectedSubCategory: item.subCategory || item.category,
+            colorBrand: [item.color, item.brand].filter(Boolean).join(" / "),
+            skipped: false,
+          };
+          expanded.add(updated[slotIdx].id);
+          remainingItems.splice(remainingItems.indexOf(item), 1);
+        }
+      }
+
+      for (const item of remainingItems) {
+        const presetSlot = PRESETS[preset].slots.find(
+          (s) => s.category.toLowerCase() === item.category.toLowerCase()
+        ) || PRESETS[preset].slots[0];
+        const newSlot: SlotState = {
+          id: makeSlotId(),
+          category: presetSlot.category,
+          label: presetSlot.label,
+          required: false,
+          subCategories: presetSlot.subCategories,
+          selectedSubCategory: item.subCategory || item.category,
+          colorBrand: [item.color, item.brand].filter(Boolean).join(" / "),
+          existingItemId: item.id,
+          skipped: false,
+        };
+        updated.push(newSlot);
+        expanded.add(newSlot.id);
+      }
+
+      setExpandedSlots(expanded);
+      return updated;
+    });
+
+    setLoadedExisting(true);
+  }, [outfit, loadedExisting, preset]);
 
   useEffect(() => {
     if (detectedItemsParam) {
@@ -357,16 +419,14 @@ export default function Reconcile() {
         }
       }
 
-      if (itemIds.length > 0) {
-        await apiRequest("POST", `/api/outfits/${outfitId}/items`, { itemIds });
-      }
+      await apiRequest("PUT", `/api/outfits/${outfitId}/items`, { itemIds });
       return itemIds;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/outfits"] });
       toast({ title: "Outfit saved!", description: "Items tagged to your outfit." });
-      navigate("/");
+      navigate(`/outfits/${outfitId}`);
     },
     onError: (error) => {
       toast({
