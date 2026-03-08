@@ -1,9 +1,8 @@
 import { useState, useRef } from "react";
 import { useRoute, useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Trash2, Loader2, Camera, Tag, X } from "lucide-react";
+import { ArrowLeft, Loader2, Tag, X, MoreVertical, Trash2, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
@@ -14,8 +13,13 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Outfit, Item } from "@shared/schema";
@@ -30,6 +34,7 @@ export default function OutfitDetail() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isReuploading, setIsReuploading] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const outfitId = params?.id ? parseInt(params.id) : null;
 
@@ -196,48 +201,42 @@ export default function OutfitDetail() {
             >
               <Tag className="h-4 w-4" />
             </Button>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="text-destructive"
-                  data-testid="button-delete"
+                  data-testid="button-menu"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isReuploading}
+                  data-testid="menu-change-photo"
+                >
+                  <Camera className="h-4 w-4" />
+                  Change Photo
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setShowDeleteDialog(true)}
+                  className="text-destructive focus:text-destructive"
+                  data-testid="menu-delete"
                 >
                   <Trash2 className="h-4 w-4" />
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete this outfit?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This will remove the outfit from your collection. The individual
-                    items will remain in your wardrobe.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={() => deleteMutation.mutate()}
-                    className="bg-destructive text-destructive-foreground"
-                    data-testid="button-confirm-delete"
-                  >
-                    {deleteMutation.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      "Delete"
-                    )}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+                  Delete Outfit
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </header>
 
       <main className="p-4 space-y-4">
-        <Card className="overflow-hidden relative">
-          <div className="aspect-[3/4] bg-muted">
+        <div className="rounded-lg overflow-hidden bg-muted">
+          <div className="aspect-[3/4]">
             {isReuploading ? (
               <div className="w-full h-full flex items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -250,17 +249,7 @@ export default function OutfitDetail() {
               />
             )}
           </div>
-          <Button
-            variant="secondary"
-            size="icon"
-            className="absolute top-3 right-3 rounded-full shadow-md"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isReuploading}
-            data-testid="button-reupload"
-          >
-            <Camera className="h-4 w-4" />
-          </Button>
-        </Card>
+        </div>
 
         {outfit.notes && (
           <p className="text-sm text-muted-foreground">{outfit.notes}</p>
@@ -335,6 +324,32 @@ export default function OutfitDetail() {
           )}
         </div>
       </main>
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this outfit?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove the outfit from your collection. The individual
+              items will remain in your wardrobe.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteMutation.mutate()}
+              className="bg-destructive text-destructive-foreground"
+              data-testid="button-confirm-delete"
+            >
+              {deleteMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

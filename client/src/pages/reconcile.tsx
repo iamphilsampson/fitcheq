@@ -293,6 +293,7 @@ export default function Reconcile() {
   const [showExitDialog, setShowExitDialog] = useState(false);
   const [hoveredDivider, setHoveredDivider] = useState<number | null>(null);
   const [loadedExisting, setLoadedExisting] = useState(false);
+  const [initialItemIds, setInitialItemIds] = useState<Set<number>>(new Set());
 
   const toggleExpanded = (slotId: string) => {
     setExpandedSlots((prev) => {
@@ -367,6 +368,8 @@ export default function Reconcile() {
       return updated;
     });
 
+    const loadedIds = new Set(outfit.items.map((i) => i.id));
+    setInitialItemIds(loadedIds);
     setLoadedExisting(true);
   }, [outfit, loadedExisting, preset]);
 
@@ -543,11 +546,24 @@ export default function Reconcile() {
   const filledCount = slots.filter((s) => !s.skipped && (s.selectedSubCategory || s.existingItemId)).length;
   const initialSlotCount = PRESETS[preset].slots.length;
 
+  const hasChanges = () => {
+    const currentIds = new Set(
+      slots.filter((s) => !s.skipped && s.existingItemId).map((s) => s.existingItemId!)
+    );
+    const hasNewItems = slots.some((s) => !s.skipped && s.selectedSubCategory && !s.existingItemId);
+    if (hasNewItems) return true;
+    if (currentIds.size !== initialItemIds.size) return true;
+    for (const id of currentIds) {
+      if (!initialItemIds.has(id)) return true;
+    }
+    return false;
+  };
+
   const handleBack = () => {
-    if (filledCount > 0) {
+    if (hasChanges()) {
       setShowExitDialog(true);
     } else {
-      navigate("/");
+      navigate(`/outfits/${outfitId}`);
     }
   };
 
@@ -823,7 +839,7 @@ export default function Reconcile() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => navigate("/")} data-testid="button-discard">
+            <AlertDialogCancel onClick={() => navigate(`/outfits/${outfitId}`)} data-testid="button-discard">
               Discard
             </AlertDialogCancel>
             <AlertDialogAction

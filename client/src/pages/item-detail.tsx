@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Trash2, Loader2, Check, X, Pencil } from "lucide-react";
+import { ArrowLeft, Trash2, Loader2, Check, X, Pencil, MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -16,8 +15,13 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Item, Outfit } from "@shared/schema";
@@ -31,6 +35,7 @@ export default function ItemDetail() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [editForm, setEditForm] = useState({
     subCategory: "",
     color: "",
@@ -52,11 +57,7 @@ export default function ItemDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/items"] });
-      toast({
-        title: "Item deleted",
-        description: "The item has been removed from your wardrobe.",
-      });
-      navigate("/");
+      navigate("/?tab=wardrobe");
     },
     onError: (error) => {
       toast({
@@ -149,14 +150,12 @@ export default function ItemDetail() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => navigate("/")}
+              onClick={() => navigate("/?tab=wardrobe")}
               data-testid="button-back"
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <h1 className="text-lg font-semibold text-foreground truncate">
-              {item.subCategory || item.category}
-            </h1>
+            <span className="text-xs text-muted-foreground uppercase tracking-wider">{item.category}</span>
           </div>
           <div className="flex items-center gap-1">
             {isEditing ? (
@@ -184,57 +183,33 @@ export default function ItemDetail() {
                 </Button>
               </>
             ) : (
-              <>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={startEditing}
-                  data-testid="button-edit"
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-destructive"
-                      data-testid="button-delete"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete this item?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This will remove the item from your wardrobe. The item will be
-                        unlinked from any outfits but the outfit photos will remain.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => deleteMutation.mutate()}
-                        className="bg-destructive text-destructive-foreground"
-                        data-testid="button-confirm-delete"
-                      >
-                        {deleteMutation.isPending ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          "Delete"
-                        )}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" data-testid="button-menu">
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={startEditing} data-testid="menu-edit">
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setShowDeleteDialog(true)}
+                    className="text-destructive focus:text-destructive"
+                    data-testid="menu-delete"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
         </div>
       </header>
 
-      <main className="p-4 space-y-5">
+      <main className="p-4 space-y-6">
         {isEditing ? (
           <div className="space-y-3">
             <div>
@@ -291,37 +266,32 @@ export default function ItemDetail() {
             </div>
           </div>
         ) : (
-          <div className="space-y-3">
-            <div>
-              <h2 className="text-xl font-semibold text-foreground">
-                {[item.color, item.brand, item.subCategory || item.category].filter(Boolean).join(" ")}
-              </h2>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="secondary">{item.category}</Badge>
-              {item.subCategory && item.subCategory !== item.category && (
-                <Badge variant="secondary">{item.subCategory}</Badge>
-              )}
+          <div className="space-y-1">
+            <h2 className="text-2xl font-bold text-foreground tracking-tight">
+              {item.subCategory || item.category}
+            </h2>
+            {item.brand && (
+              <p className="text-base text-muted-foreground">{item.brand}</p>
+            )}
+            <div className="flex items-center gap-3 pt-1">
               {item.color && (
-                <Badge variant="outline" className="gap-1.5">
+                <div className="flex items-center gap-1.5">
                   <span
-                    className="w-2.5 h-2.5 rounded-full border"
+                    className="w-3 h-3 rounded-full border"
                     style={{ backgroundColor: item.color.toLowerCase() }}
                   />
-                  {item.color}
-                </Badge>
+                  <span className="text-sm text-muted-foreground">{item.color}</span>
+                </div>
               )}
-              {item.brand && <Badge variant="outline">{item.brand}</Badge>}
-              {item.size && <Badge variant="outline">Size: {item.size}</Badge>}
+              {item.size && (
+                <span className="text-sm text-muted-foreground">Size {item.size}</span>
+              )}
             </div>
-            {item.description && (
-              <p className="text-sm text-muted-foreground">{item.description}</p>
-            )}
           </div>
         )}
 
         <div>
-          <h3 className="font-semibold text-foreground mb-3">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
             Worn in {item.outfits?.length || 0} outfit{(item.outfits?.length || 0) !== 1 ? "s" : ""}
           </h3>
 
@@ -361,6 +331,32 @@ export default function ItemDetail() {
           )}
         </div>
       </main>
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this item?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove the item from your wardrobe. The item will be
+              unlinked from any outfits but the outfit photos will remain.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteMutation.mutate()}
+              className="bg-destructive text-destructive-foreground"
+              data-testid="button-confirm-delete"
+            >
+              {deleteMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

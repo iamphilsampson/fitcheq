@@ -22,11 +22,11 @@ Preferred communication style: Simple, everyday language.
 The frontend follows a page-based structure with components organized by feature. The app is designed as a mobile-first PWA-style interface with a max-width constraint for optimal mobile viewing.
 
 ### Pages
-- **Home** (`/`): Outfits tab (default, first) with card/feed view toggle + Wardrobe tab. Compact "fitcheck" header. Each outfit card shows date and tagged item count.
+- **Home** (`/`): Outfits tab (default, first) with card/feed view toggle + Wardrobe tab. Compact centered "fitcheck" header with settings gear left. Supports `?tab=wardrobe` query param to restore tab state. Each outfit card shows date and tagged item count. Wardrobe tab has always-visible + button per category for bulk item adding.
 - **Add Outfit** (`/add-outfit`): Photo capture/upload with cropping, then saves outfit and navigates to tag page.
-- **Tag Items** (`/reconcile/:outfitId`): Slot-based manual item tagging with search/autocomplete input for color/brand that doubles as wardrobe item search. Fullscreen image preview. Horizontal insert dividers between slots. Exit confirmation when items are tagged.
-- **Outfit Detail** (`/outfits/:id`): View outfit photo with re-upload capability, tagged items, delete option, and link to tag items.
-- **Item Detail** (`/items/:id`): View item details and linked outfits.
+- **Tag Items** (`/reconcile/:outfitId`): Slot-based manual item tagging with search/autocomplete input for color/brand that doubles as wardrobe item search. Fullscreen image preview. Horizontal insert dividers between slots. Exit confirmation only when user has made actual changes (compares current state to initially loaded items).
+- **Outfit Detail** (`/outfits/:id`): Borderless outfit photo, DropdownMenu (3-dot) with "Change Photo" and "Delete Outfit" options, tagged items shown as text list with hover-reveal X remove buttons, link to tag items page.
+- **Item Detail** (`/items/:id`): Ecommerce-style layout with subcategory as bold title, brand subtitle, color dot inline. DropdownMenu (3-dot) for Edit/Delete. Back navigates to `/?tab=wardrobe`. Edit mode uses PATCH API. Linked outfits shown below.
 
 ### Backend Architecture
 - **Framework**: Express.js with TypeScript
