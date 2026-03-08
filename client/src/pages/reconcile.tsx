@@ -1,44 +1,132 @@
 import { useState, useEffect } from "react";
 import { useLocation, useRoute } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Check, Plus, Loader2, Shirt, X, Tag } from "lucide-react";
+import { ArrowLeft, Check, Plus, Loader2, Shirt, X, ChevronDown, ChevronUp, Footprints, Watch, CloudSun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Item, DetectedItem, Outfit } from "@shared/schema";
 
-const CATEGORIES = ["Tops", "Bottoms", "Outerwear", "Footwear", "Accessories"];
-const SUB_CATEGORIES: Record<string, string[]> = {
-  Tops: ["T-Shirt", "Shirt", "Blouse", "Polo", "Tank Top", "Sweater", "Hoodie", "Crop Top"],
-  Bottoms: ["Jeans", "Trousers", "Shorts", "Skirt", "Joggers", "Leggings", "Chinos"],
-  Outerwear: ["Jacket", "Coat", "Blazer", "Vest", "Cardigan", "Windbreaker", "Puffer"],
-  Footwear: ["Sneakers", "Boots", "Sandals", "Loafers", "Heels", "Flats", "Slides"],
-  Accessories: ["Watch", "Hat", "Bag", "Belt", "Sunglasses", "Jewelry", "Scarf"],
+const SLOT_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  Tops: Shirt,
+  Outerwear: CloudSun,
+  Bottoms: Shirt,
+  Footwear: Footprints,
+  Accessories: Watch,
 };
 
-interface TagItem {
-  detected: DetectedItem;
-  selectedItemId: number | null;
-  isNew: boolean;
-  newItemData?: { brand: string; size: string };
+function SlotIcon({ category, className }: { category: string; className?: string }) {
+  const Icon = SLOT_ICONS[category] || Shirt;
+  return <Icon className={className} />;
+}
+
+const PRESETS = {
+  male: {
+    slots: [
+      {
+        category: "Tops",
+        label: "Top",
+        required: true,
+        subCategories: ["T-Shirt", "Long Sleeve", "Shirt (Short)", "Shirt (Long)", "Vest", "Jumper", "Hoodie"],
+      },
+      {
+        category: "Outerwear",
+        label: "Layer",
+        required: false,
+        subCategories: ["Coat", "Overshirt", "Windbreaker"],
+      },
+      {
+        category: "Bottoms",
+        label: "Bottoms",
+        required: true,
+        subCategories: ["Jeans", "Trousers", "Shorts"],
+      },
+      {
+        category: "Footwear",
+        label: "Shoes",
+        required: true,
+        subCategories: ["Wallabee", "Trainers"],
+      },
+      {
+        category: "Accessories",
+        label: "Accessories",
+        required: false,
+        subCategories: ["Hat", "Bag", "Belt", "Sunnies"],
+      },
+    ],
+  },
+  female: {
+    slots: [
+      {
+        category: "Tops",
+        label: "Top",
+        required: true,
+        subCategories: ["T-Shirt", "Blouse", "Crop Top", "Tank Top", "Sweater", "Hoodie", "Cami"],
+      },
+      {
+        category: "Outerwear",
+        label: "Layer",
+        required: false,
+        subCategories: ["Jacket", "Coat", "Blazer", "Cardigan", "Trench"],
+      },
+      {
+        category: "Bottoms",
+        label: "Bottoms",
+        required: true,
+        subCategories: ["Jeans", "Trousers", "Skirt", "Shorts", "Leggings"],
+      },
+      {
+        category: "Footwear",
+        label: "Shoes",
+        required: true,
+        subCategories: ["Sneakers", "Boots", "Heels", "Sandals", "Flats", "Loafers"],
+      },
+      {
+        category: "Accessories",
+        label: "Accessories",
+        required: false,
+        subCategories: ["Bag", "Belt", "Sunglasses", "Jewelry", "Scarf", "Hat"],
+      },
+    ],
+  },
+};
+
+interface SlotState {
+  id: string;
+  category: string;
+  label: string;
+  required: boolean;
+  subCategories: string[];
+  selectedSubCategory: string | null;
+  color: string;
+  existingItemId: number | null;
+  skipped: boolean;
+}
+
+function getPreset(): "male" | "female" {
+  return (localStorage.getItem("fitcheck-preset") as "male" | "female") || "male";
+}
+
+let slotCounter = 0;
+function makeSlotId() {
+  return `slot-${++slotCounter}`;
+}
+
+function buildInitialSlots(preset: "male" | "female"): SlotState[] {
+  return PRESETS[preset].slots.map((s) => ({
+    id: makeSlotId(),
+    category: s.category,
+    label: s.label,
+    required: s.required,
+    subCategories: s.subCategories,
+    selectedSubCategory: null,
+    color: "",
+    existingItemId: null,
+    skipped: false,
+  }));
 }
 
 export default function Reconcile() {
@@ -50,14 +138,9 @@ export default function Reconcile() {
   const searchParams = new URLSearchParams(window.location.search);
   const detectedItemsParam = searchParams.get("items");
 
-  const [tagItems, setTagItems] = useState<TagItem[]>([]);
-  const [showAddDialog, setShowAddDialog] = useState(false);
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [newCategory, setNewCategory] = useState("Tops");
-  const [newSubCategory, setNewSubCategory] = useState("");
-  const [newColor, setNewColor] = useState("");
-  const [newDescription, setNewDescription] = useState("");
-  const [showExistingPicker, setShowExistingPicker] = useState(false);
+  const preset = getPreset();
+  const [slots, setSlots] = useState<SlotState[]>(() => buildInitialSlots(preset));
+  const [expandedSlot, setExpandedSlot] = useState<string | null>(null);
 
   const { data: outfit, isLoading: outfitLoading } = useQuery<Outfit>({
     queryKey: ["/api/outfits", outfitId],
@@ -72,14 +155,22 @@ export default function Reconcile() {
     if (detectedItemsParam) {
       try {
         const detected: DetectedItem[] = JSON.parse(decodeURIComponent(detectedItemsParam));
-        setTagItems(
-          detected.map((item) => ({
-            detected: item,
-            selectedItemId: null,
-            isNew: true,
-            newItemData: { brand: "", size: "" },
-          }))
-        );
+        setSlots((prev) => {
+          const updated = [...prev];
+          for (const d of detected) {
+            const slotIdx = updated.findIndex(
+              (s) => s.category.toLowerCase() === d.category.toLowerCase() && !s.selectedSubCategory && !s.existingItemId
+            );
+            if (slotIdx >= 0) {
+              updated[slotIdx] = {
+                ...updated[slotIdx],
+                selectedSubCategory: d.subCategory,
+                color: d.color,
+              };
+            }
+          }
+          return updated;
+        });
       } catch (e) {
         console.error("Failed to parse detected items:", e);
       }
@@ -90,17 +181,17 @@ export default function Reconcile() {
     mutationFn: async () => {
       const itemIds: number[] = [];
 
-      for (const tagItem of tagItems) {
-        if (tagItem.selectedItemId) {
-          itemIds.push(tagItem.selectedItemId);
-        } else if (tagItem.isNew) {
+      for (const slot of slots) {
+        if (slot.skipped) continue;
+        if (slot.existingItemId) {
+          itemIds.push(slot.existingItemId);
+        } else if (slot.selectedSubCategory) {
+          const desc = `${slot.color} ${slot.selectedSubCategory}`.trim();
           const response = await apiRequest("POST", "/api/items", {
-            category: tagItem.detected.category,
-            subCategory: tagItem.detected.subCategory,
-            color: tagItem.detected.color,
-            description: tagItem.detected.description,
-            brand: tagItem.newItemData?.brand || null,
-            size: tagItem.newItemData?.size || null,
+            category: slot.category,
+            subCategory: slot.selectedSubCategory,
+            color: slot.color || null,
+            description: desc || null,
           });
           const newItem = response as Item;
           itemIds.push(newItem.id);
@@ -110,18 +201,12 @@ export default function Reconcile() {
       if (itemIds.length > 0) {
         await apiRequest("POST", `/api/outfits/${outfitId}/items`, { itemIds });
       }
-
       return itemIds;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/outfits"] });
-      toast({
-        title: "Outfit saved!",
-        description: tagItems.length > 0
-          ? "Your outfit and items have been saved."
-          : "Outfit saved. You can tag items later.",
-      });
+      toast({ title: "Outfit saved!", description: "Items tagged to your outfit." });
       navigate("/");
     },
     onError: (error) => {
@@ -133,58 +218,106 @@ export default function Reconcile() {
     },
   });
 
-  const handleAddNewItem = () => {
-    if (!newCategory) return;
-    const newItem: TagItem = {
-      detected: {
-        category: newCategory,
-        subCategory: newSubCategory || newCategory,
-        color: newColor,
-        description: newDescription || `${newColor} ${newSubCategory || newCategory}`.trim(),
-      },
-      selectedItemId: null,
-      isNew: true,
-      newItemData: { brand: "", size: "" },
-    };
-    setTagItems((prev) => [...prev, newItem]);
-    setShowAddDialog(false);
-    setNewCategory("Tops");
-    setNewSubCategory("");
-    setNewColor("");
-    setNewDescription("");
-  };
-
-  const handleAddExisting = (item: Item) => {
-    const existingTag: TagItem = {
-      detected: {
-        category: item.category,
-        subCategory: item.subCategory || item.category,
-        color: item.color || "",
-        description: item.description || "",
-      },
-      selectedItemId: item.id,
-      isNew: false,
-    };
-    setTagItems((prev) => [...prev, existingTag]);
-    setShowExistingPicker(false);
-  };
-
-  const handleRemoveItem = (index: number) => {
-    setTagItems((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const handleUpdateNewItem = (index: number, field: "brand" | "size", value: string) => {
-    setTagItems((prev) =>
-      prev.map((item, i) =>
-        i === index
-          ? { ...item, newItemData: { ...item.newItemData!, [field]: value } }
-          : item
+  const selectSubCategory = (slotId: string, sub: string) => {
+    setSlots((prev) =>
+      prev.map((s) =>
+        s.id === slotId
+          ? { ...s, selectedSubCategory: s.selectedSubCategory === sub ? null : sub, existingItemId: null, skipped: false }
+          : s
       )
     );
   };
 
-  const alreadyLinkedIds = new Set(tagItems.filter((t) => t.selectedItemId).map((t) => t.selectedItemId));
-  const availableExistingItems = existingItems?.filter((item) => !alreadyLinkedIds.has(item.id)) || [];
+  const selectExistingItem = (slotId: string, item: Item) => {
+    setSlots((prev) =>
+      prev.map((s) =>
+        s.id === slotId
+          ? { ...s, existingItemId: item.id, selectedSubCategory: item.subCategory || item.category, color: item.color || "", skipped: false }
+          : s
+      )
+    );
+  };
+
+  const updateColor = (slotId: string, color: string) => {
+    setSlots((prev) =>
+      prev.map((s) => (s.id === slotId ? { ...s, color } : s))
+    );
+  };
+
+  const skipSlot = (slotId: string) => {
+    setSlots((prev) =>
+      prev.map((s) =>
+        s.id === slotId
+          ? { ...s, skipped: true, selectedSubCategory: null, existingItemId: null, color: "" }
+          : s
+      )
+    );
+  };
+
+  const unskipSlot = (slotId: string) => {
+    setSlots((prev) =>
+      prev.map((s) => (s.id === slotId ? { ...s, skipped: false } : s))
+    );
+  };
+
+  const clearSlot = (slotId: string) => {
+    setSlots((prev) =>
+      prev.map((s) =>
+        s.id === slotId ? { ...s, selectedSubCategory: null, existingItemId: null, color: "", skipped: false } : s
+      )
+    );
+  };
+
+  const addExtraSlot = () => {
+    const presetSlots = PRESETS[preset].slots;
+    const newSlot: SlotState = {
+      id: makeSlotId(),
+      category: presetSlots[0].category,
+      label: presetSlots[0].label,
+      required: false,
+      subCategories: presetSlots[0].subCategories,
+      selectedSubCategory: null,
+      color: "",
+      existingItemId: null,
+      skipped: false,
+    };
+    setSlots((prev) => [...prev, newSlot]);
+  };
+
+  const changeExtraSlotCategory = (slotId: string, category: string) => {
+    const presetSlot = PRESETS[preset].slots.find((s) => s.category === category);
+    if (!presetSlot) return;
+    setSlots((prev) =>
+      prev.map((s) =>
+        s.id === slotId
+          ? {
+              ...s,
+              category: presetSlot.category,
+              label: presetSlot.label,
+              subCategories: presetSlot.subCategories,
+              selectedSubCategory: null,
+              existingItemId: null,
+              color: "",
+            }
+          : s
+      )
+    );
+  };
+
+  const removeExtraSlot = (slotId: string) => {
+    setSlots((prev) => prev.filter((s) => s.id !== slotId));
+  };
+
+  const getMatchingItems = (category: string): Item[] => {
+    if (!existingItems) return [];
+    const usedIds = new Set(slots.filter((s) => s.existingItemId).map((s) => s.existingItemId));
+    return existingItems.filter(
+      (item) => item.category.toLowerCase() === category.toLowerCase() && !usedIds.has(item.id)
+    );
+  };
+
+  const filledCount = slots.filter((s) => !s.skipped && (s.selectedSubCategory || s.existingItemId)).length;
+  const initialSlotCount = PRESETS[preset].slots.length;
 
   if (outfitLoading) {
     return (
@@ -201,7 +334,6 @@ export default function Reconcile() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
             onClick={() => navigate("/")}
             data-testid="button-back"
           >
@@ -210,13 +342,13 @@ export default function Reconcile() {
           <div className="flex-1">
             <h1 className="text-base font-semibold text-foreground">Tag Items</h1>
             <p className="text-xs text-muted-foreground">
-              {tagItems.length} item{tagItems.length !== 1 ? "s" : ""} tagged
+              {filledCount} item{filledCount !== 1 ? "s" : ""} tagged
             </p>
           </div>
         </div>
       </header>
 
-      <main className="p-4 pb-28 space-y-4">
+      <main className="p-4 pb-28 space-y-3">
         {outfit && (
           <Card className="overflow-hidden">
             <div className="aspect-[16/9] bg-muted">
@@ -229,106 +361,202 @@ export default function Reconcile() {
           </Card>
         )}
 
-        {tagItems.length === 0 && !detectedItemsParam && (
-          <div className="py-6 text-center">
-            <Tag className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-            <p className="text-sm font-medium text-foreground mb-1">No items tagged yet</p>
-            <p className="text-xs text-muted-foreground mb-4">
-              Tag the clothing items in this outfit
-            </p>
-          </div>
-        )}
+        {slots.map((slot, index) => {
+          const matchingItems = getMatchingItems(slot.category);
+          const isExpanded = expandedSlot === slot.id;
+          const isFilled = !!(slot.selectedSubCategory || slot.existingItemId);
+          const isExtra = index >= initialSlotCount;
+          const selectedExisting = existingItems?.find((i) => i.id === slot.existingItemId);
 
-        <div className="space-y-3">
-          {tagItems.map((tagItem, index) => {
-            const selectedItem = existingItems?.find(
-              (item) => item.id === tagItem.selectedItemId
-            );
-
+          if (slot.skipped) {
             return (
-              <Card key={index} className="p-3" data-testid={`card-tag-${index}`}>
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
-                    {selectedItem?.imageUrl ? (
-                      <img src={selectedItem.imageUrl} alt="" className="w-full h-full object-cover rounded-md" />
-                    ) : (
-                      <Shirt className="h-5 w-5 text-muted-foreground" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium text-sm">
-                        {tagItem.detected.subCategory || tagItem.detected.category}
-                      </span>
-                      {tagItem.detected.color && (
-                        <Badge variant="secondary" className="text-xs">
-                          {tagItem.detected.color}
-                        </Badge>
-                      )}
-                      {tagItem.isNew ? (
-                        <Badge variant="outline" className="text-xs bg-primary/5 text-primary">
-                          New
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-xs">
-                          Existing
-                        </Badge>
-                      )}
-                    </div>
-                    {tagItem.detected.description && (
-                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                        {tagItem.detected.description}
-                      </p>
-                    )}
-                    {tagItem.isNew && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="mt-1 h-7 text-xs px-2"
-                        onClick={() => setEditingIndex(index)}
-                        data-testid={`button-edit-${index}`}
-                      >
-                        Add brand/size
-                      </Button>
-                    )}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground"
-                    onClick={() => handleRemoveItem(index)}
-                    data-testid={`button-remove-${index}`}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
+              <Card
+                key={slot.id}
+                className="p-3 opacity-50 cursor-pointer"
+                onClick={() => unskipSlot(slot.id)}
+                data-testid={`card-slot-${index}`}
+              >
+                <div className="flex items-center gap-3">
+                  <SlotIcon category={slot.category} className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground line-through">{slot.label}</span>
+                  <span className="text-xs text-muted-foreground ml-auto">tap to add</span>
                 </div>
               </Card>
             );
-          })}
-        </div>
+          }
 
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            className="flex-1 gap-2"
-            onClick={() => setShowAddDialog(true)}
-            data-testid="button-add-new-item"
-          >
-            <Plus className="h-4 w-4" />
-            New Item
-          </Button>
-          {availableExistingItems.length > 0 && (
-            <Button
-              variant="outline"
-              className="flex-1 gap-2"
-              onClick={() => setShowExistingPicker(true)}
-              data-testid="button-add-existing-item"
-            >
-              <Shirt className="h-4 w-4" />
-              From Wardrobe
-            </Button>
-          )}
-        </div>
+          return (
+            <Card key={slot.id} className="p-3" data-testid={`card-slot-${index}`}>
+              <div
+                className="flex items-center gap-3 cursor-pointer"
+                onClick={() => setExpandedSlot(isExpanded ? null : slot.id)}
+              >
+                <SlotIcon category={slot.category} className="h-4 w-4 text-muted-foreground" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{slot.label}</span>
+                    {isFilled && (
+                      <Badge variant="secondary" className="text-xs">
+                        {selectedExisting ? (
+                          <>{selectedExisting.brand ? `${selectedExisting.brand} ` : ""}{slot.selectedSubCategory}</>
+                        ) : (
+                          <>{slot.color ? `${slot.color} ` : ""}{slot.selectedSubCategory}</>
+                        )}
+                      </Badge>
+                    )}
+                    {isFilled && selectedExisting && (
+                      <Badge variant="outline" className="text-xs">Existing</Badge>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  {isFilled && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => { e.stopPropagation(); clearSlot(slot.id); }}
+                      data-testid={`button-clear-${index}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                  {!slot.required && !isExtra && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground"
+                      onClick={(e) => { e.stopPropagation(); skipSlot(slot.id); }}
+                      data-testid={`button-skip-${index}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                  {isExtra && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground"
+                      onClick={(e) => { e.stopPropagation(); removeExtraSlot(slot.id); }}
+                      data-testid={`button-remove-extra-${index}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                  {isExpanded ? (
+                    <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </div>
+              </div>
+
+              {isExpanded && (
+                <div className="mt-3 space-y-3">
+                  {isExtra && (
+                    <div className="flex gap-1.5 flex-wrap">
+                      {PRESETS[preset].slots.map((ps) => (
+                        <button
+                          key={ps.category}
+                          className={`relative px-2.5 py-1 rounded-full text-xs font-medium ${
+                            slot.category === ps.category
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-muted-foreground hover-elevate"
+                          }`}
+                          onClick={() => changeExtraSlotCategory(slot.id, ps.category)}
+                          data-testid={`chip-category-${ps.category}-${index}`}
+                        >
+                          {ps.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {matchingItems.length > 0 && (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1.5">From your wardrobe</p>
+                      <div className="flex gap-2 overflow-x-auto pb-1">
+                        {matchingItems.map((item) => (
+                          <button
+                            key={item.id}
+                            className={`relative flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg border text-left ${
+                              slot.existingItemId === item.id
+                                ? "border-primary bg-primary/5"
+                                : "border-border hover-elevate"
+                            }`}
+                            onClick={() => selectExistingItem(slot.id, item)}
+                            data-testid={`existing-${item.id}-slot-${index}`}
+                          >
+                            <div className="w-8 h-8 rounded bg-muted flex items-center justify-center flex-shrink-0">
+                              {item.imageUrl ? (
+                                <img src={item.imageUrl} alt="" className="w-full h-full object-cover rounded" />
+                              ) : (
+                                <Shirt className="h-4 w-4 text-muted-foreground" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-medium truncate max-w-[80px]">
+                                {item.subCategory || item.category}
+                              </p>
+                              {(item.brand || item.color) && (
+                                <p className="text-xs text-muted-foreground truncate max-w-[80px]">
+                                  {item.brand || item.color}
+                                </p>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1.5">
+                      {matchingItems.length > 0 ? "Or add new" : "Select type"}
+                    </p>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {slot.subCategories.map((sub) => (
+                        <button
+                          key={sub}
+                          className={`relative px-2.5 py-1.5 rounded-full text-xs font-medium ${
+                            slot.selectedSubCategory === sub && !slot.existingItemId
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-foreground hover-elevate"
+                          }`}
+                          onClick={() => selectSubCategory(slot.id, sub)}
+                          data-testid={`chip-${sub.replace(/\s+/g, "-").toLowerCase()}-${index}`}
+                        >
+                          {sub}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {slot.selectedSubCategory && !slot.existingItemId && (
+                    <div>
+                      <Input
+                        placeholder="Color (e.g. Black, Navy)"
+                        value={slot.color}
+                        onChange={(e) => updateColor(slot.id, e.target.value)}
+                        className="h-8 text-sm"
+                        data-testid={`input-color-${index}`}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </Card>
+          );
+        })}
+
+        <Button
+          variant="ghost"
+          className="w-full gap-2 text-muted-foreground"
+          onClick={addExtraSlot}
+          data-testid="button-add-slot"
+        >
+          <Plus className="h-4 w-4" />
+          Add another item
+        </Button>
       </main>
 
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/95 backdrop-blur border-t">
@@ -348,173 +576,12 @@ export default function Reconcile() {
             ) : (
               <>
                 <Check className="h-5 w-5" />
-                {tagItems.length > 0 ? "Save Outfit" : "Save Without Items"}
+                Save Outfit ({filledCount} items)
               </>
             )}
           </Button>
         </div>
       </div>
-
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add New Item</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label className="text-sm">Category</Label>
-              <Select value={newCategory} onValueChange={(v) => { setNewCategory(v); setNewSubCategory(""); }}>
-                <SelectTrigger data-testid="select-category">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CATEGORIES.map((cat) => (
-                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-sm">Type</Label>
-              <Select value={newSubCategory} onValueChange={setNewSubCategory}>
-                <SelectTrigger data-testid="select-subcategory">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(SUB_CATEGORIES[newCategory] || []).map((sub) => (
-                    <SelectItem key={sub} value={sub}>{sub}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-sm">Color</Label>
-              <Input
-                placeholder="e.g., Black, Navy, Red"
-                value={newColor}
-                onChange={(e) => setNewColor(e.target.value)}
-                data-testid="input-color"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-sm">Description (optional)</Label>
-              <Input
-                placeholder="e.g., Striped cotton crew neck"
-                value={newDescription}
-                onChange={(e) => setNewDescription(e.target.value)}
-                data-testid="input-description"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setShowAddDialog(false)}>Cancel</Button>
-            <Button onClick={handleAddNewItem} disabled={!newCategory} data-testid="button-confirm-add">
-              Add Item
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showExistingPicker} onOpenChange={setShowExistingPicker}>
-        <DialogContent className="max-h-[80vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Select from Wardrobe</DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto space-y-2">
-            {availableExistingItems.map((item) => (
-              <Card
-                key={item.id}
-                className="p-3 cursor-pointer hover-elevate"
-                onClick={() => handleAddExisting(item)}
-                data-testid={`select-existing-${item.id}`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
-                    {item.imageUrl ? (
-                      <img src={item.imageUrl} alt="" className="w-full h-full object-cover rounded-md" />
-                    ) : (
-                      <Shirt className="h-5 w-5 text-muted-foreground" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {item.subCategory || item.category}
-                    </p>
-                    <div className="flex gap-1.5 mt-0.5">
-                      {item.brand && (
-                        <span className="text-xs text-muted-foreground">{item.brand}</span>
-                      )}
-                      {item.color && (
-                        <Badge variant="secondary" className="text-xs h-4 px-1.5">{item.color}</Badge>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            ))}
-            {availableExistingItems.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No items available to add
-              </p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={editingIndex !== null} onOpenChange={() => setEditingIndex(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Details</DialogTitle>
-          </DialogHeader>
-          {editingIndex !== null && (
-            <div className="space-y-3">
-              <div className="p-3 bg-muted rounded-md">
-                <p className="font-medium text-sm">
-                  {tagItems[editingIndex]?.detected.subCategory ||
-                    tagItems[editingIndex]?.detected.category}
-                </p>
-                {tagItems[editingIndex]?.detected.color && (
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {tagItems[editingIndex]?.detected.color}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm">Brand (optional)</Label>
-                <Input
-                  placeholder="e.g., Nike, Zara, Uniqlo"
-                  value={tagItems[editingIndex]?.newItemData?.brand || ""}
-                  onChange={(e) =>
-                    handleUpdateNewItem(editingIndex, "brand", e.target.value)
-                  }
-                  data-testid="input-brand"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-sm">Size (optional)</Label>
-                <Input
-                  placeholder="e.g., M, 32, 10.5"
-                  value={tagItems[editingIndex]?.newItemData?.size || ""}
-                  onChange={(e) =>
-                    handleUpdateNewItem(editingIndex, "size", e.target.value)
-                  }
-                  data-testid="input-size"
-                />
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button onClick={() => setEditingIndex(null)} data-testid="button-done">
-              Done
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

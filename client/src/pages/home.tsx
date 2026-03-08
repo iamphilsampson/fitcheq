@@ -1,18 +1,36 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Camera, Shirt, Calendar, Search, LayoutGrid, List } from "lucide-react";
+import { Camera, Shirt, Calendar, Search, LayoutGrid, List, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { Item, Outfit } from "@shared/schema";
+
+function getPreset(): "male" | "female" {
+  return (localStorage.getItem("fitcheck-preset") as "male" | "female") || "male";
+}
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("outfits");
   const [outfitViewMode, setOutfitViewMode] = useState<"card" | "feed">("card");
+  const [showSettings, setShowSettings] = useState(false);
+  const [preset, setPreset] = useState<"male" | "female">(getPreset);
+
+  const handlePresetChange = (value: "male" | "female") => {
+    setPreset(value);
+    localStorage.setItem("fitcheck-preset", value);
+  };
 
   const { data: items, isLoading: itemsLoading } = useQuery<Item[]>({
     queryKey: ["/api/items"],
@@ -49,16 +67,26 @@ export default function Home() {
           <h1 className="text-lg font-bold tracking-tight text-foreground" style={{ fontFamily: "'Inter', sans-serif", letterSpacing: "-0.03em" }}>
             fit<span className="text-primary">check</span>
           </h1>
-          <div className="relative flex-1 max-w-[200px] ml-3">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search..."
-              className="pl-8 h-8 text-sm"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              data-testid="input-search"
-            />
+          <div className="flex items-center gap-2 flex-1 justify-end ml-3">
+            <div className="relative flex-1 max-w-[180px]">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search..."
+                className="pl-8 h-8 text-sm"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                data-testid="input-search"
+              />
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowSettings(true)}
+              data-testid="button-settings"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       </header>
@@ -85,7 +113,6 @@ export default function Home() {
                 <Button
                   variant={outfitViewMode === "card" ? "secondary" : "ghost"}
                   size="icon"
-                  className="h-8 w-8"
                   onClick={() => setOutfitViewMode("card")}
                   data-testid="button-card-view"
                 >
@@ -94,7 +121,6 @@ export default function Home() {
                 <Button
                   variant={outfitViewMode === "feed" ? "secondary" : "ghost"}
                   size="icon"
-                  className="h-8 w-8"
                   onClick={() => setOutfitViewMode("feed")}
                   data-testid="button-feed-view"
                 >
@@ -272,6 +298,36 @@ export default function Home() {
           </Button>
         </Link>
       </div>
+
+      <Dialog open={showSettings} onOpenChange={setShowSettings}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Settings</DialogTitle>
+            <DialogDescription>Choose your clothing preset</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Clothing preset</p>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant={preset === "male" ? "default" : "outline"}
+                className="w-full"
+                onClick={() => handlePresetChange("male")}
+                data-testid="button-preset-male"
+              >
+                Male
+              </Button>
+              <Button
+                variant={preset === "female" ? "default" : "outline"}
+                className="w-full"
+                onClick={() => handlePresetChange("female")}
+                data-testid="button-preset-female"
+              >
+                Female
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
