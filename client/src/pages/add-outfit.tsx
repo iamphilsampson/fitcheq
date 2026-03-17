@@ -10,145 +10,26 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import ReactCrop, { type Crop as CropType, centerCrop, makeAspectCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
-
-const BACKGROUNDS = [
-  {
-    name: "Chalk",
-    type: "solid" as const,
-    color: "#F5F2EE",
-    css: "#F5F2EE",
-  },
-  {
-    name: "Sand Drift",
-    type: "radial" as const,
-    inner: "#F0E4C8",
-    outer: "#C49A6C",
-    css: "radial-gradient(circle at 40% 35%, #F0E4C8, #C49A6C)",
-  },
-  {
-    name: "Lilac Mist",
-    type: "radial" as const,
-    inner: "#E8DDFF",
-    outer: "#A48FD8",
-    css: "radial-gradient(circle at 40% 35%, #E8DDFF, #A48FD8)",
-  },
-  {
-    name: "Peach Haze",
-    type: "linear" as const,
-    from: "#FDECD2",
-    to: "#E8856A",
-    angle: 140,
-    css: "linear-gradient(140deg, #FDECD2, #E8856A)",
-  },
-  {
-    name: "Slate Deep",
-    type: "linear" as const,
-    from: "#363B4E",
-    to: "#181C2A",
-    angle: 155,
-    css: "linear-gradient(155deg, #363B4E, #181C2A)",
-  },
-  {
-    name: "Sage Blur",
-    type: "radial" as const,
-    inner: "#D4E8CC",
-    outer: "#839E7E",
-    css: "radial-gradient(circle at 40% 35%, #D4E8CC, #839E7E)",
-  },
-] as const;
-
-type Background = (typeof BACKGROUNDS)[number];
-
-function drawBackground(ctx: CanvasRenderingContext2D, bg: Background, w: number, h: number) {
-  if (bg.type === "solid") {
-    ctx.fillStyle = bg.color;
-    ctx.fillRect(0, 0, w, h);
-  } else if (bg.type === "radial") {
-    const cx = w * 0.4;
-    const cy = h * 0.35;
-    const r = Math.max(w, h) * 0.75;
-    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-    grad.addColorStop(0, bg.inner);
-    grad.addColorStop(1, bg.outer);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
-  } else if (bg.type === "linear") {
-    const rad = (bg.angle * Math.PI) / 180;
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
-    const len = Math.abs(w * cos) + Math.abs(h * sin);
-    const x1 = w / 2 - (cos * len) / 2;
-    const y1 = h / 2 - (sin * len) / 2;
-    const x2 = w / 2 + (cos * len) / 2;
-    const y2 = h / 2 + (sin * len) / 2;
-    const grad = ctx.createLinearGradient(x1, y1, x2, y2);
-    grad.addColorStop(0, bg.from);
-    grad.addColorStop(1, bg.to);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
-  }
-}
-
-function drawCutoutCentered(ctx: CanvasRenderingContext2D, img: HTMLImageElement, w: number, h: number) {
-  const scale = Math.min(w / img.naturalWidth, h / img.naturalHeight);
-  const dw = img.naturalWidth * scale;
-  const dh = img.naturalHeight * scale;
-  const dx = (w - dw) / 2;
-  const dy = (h - dh) / 2;
-  ctx.drawImage(img, dx, dy, dw, dh);
-}
-
-async function hasTransparency(blob: Blob): Promise<boolean> {
-  if (!blob.type.includes("png")) return false;
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      const size = 200;
-      const canvas = document.createElement("canvas");
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(img, 0, 0, size, size);
-      const data = ctx.getImageData(0, 0, size, size).data;
-      URL.revokeObjectURL(url);
-      for (let i = 3; i < data.length; i += 4) {
-        if (data[i] < 250) { resolve(true); return; }
-      }
-      resolve(false);
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); resolve(false); };
-    img.src = url;
-  });
-}
+import { BACKGROUNDS, drawBackground, drawCutoutCentered, hasTransparency, compositeOnBackground } from "@/lib/imageUtils";
 
 function getCroppedBlob(image: HTMLImageElement, crop: CropType): Promise<Blob> {
   const canvas = document.createElement("canvas");
   const scaleX = image.naturalWidth / image.width;
   const scaleY = image.naturalHeight / image.height;
-  const pixelCrop = {
+  const pxCrop = {
     x: (crop.x || 0) * scaleX,
     y: (crop.y || 0) * scaleY,
     width: (crop.width || 0) * scaleX,
     height: (crop.height || 0) * scaleY,
   };
-  canvas.width = pixelCrop.width;
-  canvas.height = pixelCrop.height;
+  canvas.width = pxCrop.width;
+  canvas.height = pxCrop.height;
   const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(image, pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height, 0, 0, pixelCrop.width, pixelCrop.height);
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => { if (blob) resolve(blob); else reject(new Error("Canvas is empty")); },
-      "image/jpeg",
-      0.92
-    );
-  });
+  ctx.drawImage(image, pxCrop.x, pxCrop.y, pxCrop.width, pxCrop.height, 0, 0, pxCrop.width, pxCrop.height);
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Canvas empty"))), "image/jpeg", 0.92)
+  );
 }
-
-const canPaste =
-  typeof navigator !== "undefined" &&
-  "clipboard" in navigator &&
-  typeof (navigator.clipboard as Clipboard & { read?: () => Promise<ClipboardItems> }).read === "function";
 
 export default function AddOutfit() {
   const [, navigate] = useLocation();
@@ -156,6 +37,7 @@ export default function AddOutfit() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const pasteZoneRef = useRef<HTMLDivElement>(null);
 
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -167,27 +49,91 @@ export default function AddOutfit() {
   const [isUploading, setIsUploading] = useState(false);
 
   const [isPasteMode, setIsPasteMode] = useState(false);
+  const [awaitingPaste, setAwaitingPaste] = useState(false);
   const [pastedBlob, setPastedBlob] = useState<Blob | null>(null);
   const [selectedBg, setSelectedBg] = useState(0);
   const [compositeBlob, setCompositeBlob] = useState<Blob | null>(null);
   const [isCompositing, setIsCompositing] = useState(false);
 
+  const processPastedBlob = useCallback(async (blob: Blob) => {
+    setAwaitingPaste(false);
+    const transparent = await hasTransparency(blob);
+    if (transparent) {
+      setPastedBlob(blob);
+      setSelectedBg(0);
+      setIsPasteMode(true);
+      setCompositeBlob(null);
+      setImagePreview(null);
+    } else {
+      const url = URL.createObjectURL(blob);
+      const file = new File([blob], "paste.jpg", { type: blob.type });
+      setSelectedImage(file);
+      setImagePreview(url);
+      setIsCropping(true);
+      setCroppedPreview(null);
+      setCompositeBlob(null);
+      setIsPasteMode(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleWindowPaste = (e: ClipboardEvent) => {
+      const items = Array.from(e.clipboardData?.items ?? []);
+      const imageItem = items.find((i) => i.type.startsWith("image/"));
+      if (!imageItem) return;
+      e.preventDefault();
+      const blob = imageItem.getAsFile();
+      if (blob) processPastedBlob(blob);
+    };
+    window.addEventListener("paste", handleWindowPaste);
+    return () => window.removeEventListener("paste", handleWindowPaste);
+  }, [processPastedBlob]);
+
   useEffect(() => {
     if (!isPasteMode || !pastedBlob || !previewCanvasRef.current) return;
     const canvas = previewCanvasRef.current;
-    const W = canvas.width;
-    const H = canvas.height;
     const ctx = canvas.getContext("2d")!;
     const bg = BACKGROUNDS[selectedBg];
-    drawBackground(ctx, bg, W, H);
+    drawBackground(ctx, bg, canvas.width, canvas.height);
     const url = URL.createObjectURL(pastedBlob);
     const img = new Image();
-    img.onload = () => {
-      drawCutoutCentered(ctx, img, W, H);
-      URL.revokeObjectURL(url);
-    };
+    img.onload = () => { drawCutoutCentered(ctx, img, canvas.width, canvas.height); URL.revokeObjectURL(url); };
     img.src = url;
   }, [isPasteMode, pastedBlob, selectedBg]);
+
+  const handlePasteButtonClick = () => {
+    setAwaitingPaste(true);
+    setTimeout(() => pasteZoneRef.current?.focus(), 50);
+  };
+
+  const handlePasteZoneEvent = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const items = Array.from(e.clipboardData.items);
+    const imageItem = items.find((i) => i.type.startsWith("image/"));
+    if (!imageItem) {
+      toast({ title: "No image found", description: "Copy a photo first, then paste it here.", variant: "destructive" });
+      setAwaitingPaste(false);
+      return;
+    }
+    const blob = imageItem.getAsFile();
+    if (blob) processPastedBlob(blob);
+  };
+
+  const handleComposite = async () => {
+    if (!pastedBlob) return;
+    setIsCompositing(true);
+    try {
+      const blob = await compositeOnBackground(pastedBlob, selectedBg);
+      setCompositeBlob(blob);
+      setImagePreview(URL.createObjectURL(blob));
+      setIsPasteMode(false);
+      setPastedBlob(null);
+    } catch {
+      toast({ title: "Failed to compose image", variant: "destructive" });
+    } finally {
+      setIsCompositing(false);
+    }
+  };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -215,87 +161,9 @@ export default function AddOutfit() {
     } catch { }
   };
 
-  const handlePaste = async () => {
-    try {
-      const clipboardItems = await (navigator.clipboard as Clipboard & { read: () => Promise<ClipboardItems> }).read();
-      let imageBlob: Blob | null = null;
-      for (const item of clipboardItems) {
-        for (const type of item.types) {
-          if (type.startsWith("image/")) {
-            imageBlob = await item.getType(type);
-            break;
-          }
-        }
-        if (imageBlob) break;
-      }
-      if (!imageBlob) {
-        toast({ title: "No image found", description: "Copy an image first, then paste it here.", variant: "destructive" });
-        return;
-      }
-      const transparent = await hasTransparency(imageBlob);
-      if (transparent) {
-        setPastedBlob(imageBlob);
-        setSelectedBg(0);
-        setIsPasteMode(true);
-        setCompositeBlob(null);
-        setImagePreview(null);
-      } else {
-        const url = URL.createObjectURL(imageBlob);
-        const file = new File([imageBlob], "paste.jpg", { type: imageBlob.type });
-        setSelectedImage(file);
-        setImagePreview(url);
-        setIsCropping(true);
-        setCroppedPreview(null);
-        setCompositeBlob(null);
-        setIsPasteMode(false);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "";
-      if (msg.includes("denied") || msg.includes("permission") || msg.includes("allowed")) {
-        toast({ title: "Clipboard access denied", description: "Allow clipboard access when prompted.", variant: "destructive" });
-      } else {
-        toast({ title: "Paste not available", description: "Try using the Gallery option instead.", variant: "destructive" });
-      }
-    }
-  };
-
-  const handleComposite = async () => {
-    if (!pastedBlob) return;
-    setIsCompositing(true);
-    try {
-      const W = 900;
-      const H = 1200;
-      const canvas = document.createElement("canvas");
-      canvas.width = W;
-      canvas.height = H;
-      const ctx = canvas.getContext("2d")!;
-      drawBackground(ctx, BACKGROUNDS[selectedBg], W, H);
-      await new Promise<void>((resolve) => {
-        const url = URL.createObjectURL(pastedBlob);
-        const img = new Image();
-        img.onload = () => { drawCutoutCentered(ctx, img, W, H); URL.revokeObjectURL(url); resolve(); };
-        img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
-        img.src = url;
-      });
-      canvas.toBlob((blob) => {
-        if (!blob) { toast({ title: "Failed to compose", variant: "destructive" }); return; }
-        const previewUrl = URL.createObjectURL(blob);
-        setCompositeBlob(blob);
-        setImagePreview(previewUrl);
-        setIsPasteMode(false);
-        setPastedBlob(null);
-        setIsCompositing(false);
-      }, "image/jpeg", 0.92);
-    } catch {
-      toast({ title: "Failed to compose image", variant: "destructive" });
-      setIsCompositing(false);
-    }
-  };
-
   const onImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
     const { width, height } = e.currentTarget;
-    const newCrop = centerCrop(makeAspectCrop({ unit: "%", width: 90 }, 3 / 4, width, height), width, height);
-    setCrop(newCrop);
+    setCrop(centerCrop(makeAspectCrop({ unit: "%", width: 90 }, 3 / 4, width, height), width, height));
   }, []);
 
   const handleCropDone = async () => {
@@ -305,19 +173,9 @@ export default function AddOutfit() {
       setCroppedPreview(URL.createObjectURL(blob));
       setIsCropping(false);
     } catch {
-      toast({ title: "Crop failed", description: "Could not crop the image, using original", variant: "destructive" });
+      toast({ title: "Crop failed", variant: "destructive" });
       setIsCropping(false);
     }
-  };
-
-  const handleCameraCapture = () => {
-    fileInputRef.current?.setAttribute("capture", "environment");
-    fileInputRef.current?.click();
-  };
-
-  const handleGallerySelect = () => {
-    fileInputRef.current?.removeAttribute("capture");
-    fileInputRef.current?.click();
   };
 
   const clearImage = () => {
@@ -326,6 +184,7 @@ export default function AddOutfit() {
     setCroppedPreview(null);
     setIsCropping(false);
     setIsPasteMode(false);
+    setAwaitingPaste(false);
     setPastedBlob(null);
     setCompositeBlob(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -343,42 +202,32 @@ export default function AddOutfit() {
       if (compositeBlob) {
         uploadBlob = compositeBlob;
       } else if (selectedImage) {
-        if (croppedPreview && imgRef.current && crop) {
-          uploadBlob = await getCroppedBlob(imgRef.current, crop);
-        } else {
-          uploadBlob = selectedImage;
-        }
+        uploadBlob = croppedPreview && imgRef.current && crop
+          ? await getCroppedBlob(imgRef.current, crop)
+          : selectedImage;
       } else {
         throw new Error("No image available");
       }
 
-      const urlResponse = await fetch("/api/uploads/request-url", {
+      const urlRes = await fetch("/api/uploads/request-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: selectedImage?.name ?? "outfit.jpg",
-          size: uploadBlob.size,
-          contentType: "image/jpeg",
-        }),
+        body: JSON.stringify({ name: selectedImage?.name ?? "outfit.jpg", size: uploadBlob.size, contentType: "image/jpeg" }),
       });
-      if (!urlResponse.ok) throw new Error("Failed to get upload URL");
-      const { uploadURL, objectPath } = await urlResponse.json();
+      if (!urlRes.ok) throw new Error("Failed to get upload URL");
+      const { uploadURL, objectPath } = await urlRes.json();
 
-      const uploadResponse = await fetch(uploadURL, {
-        method: "PUT",
-        body: uploadBlob,
-        headers: { "Content-Type": "image/jpeg" },
-      });
-      if (!uploadResponse.ok) throw new Error("Failed to upload image");
+      const upRes = await fetch(uploadURL, { method: "PUT", body: uploadBlob, headers: { "Content-Type": "image/jpeg" } });
+      if (!upRes.ok) throw new Error("Failed to upload image");
 
-      const outfitResponse = await fetch("/api/outfits", {
+      const outfitRes = await fetch("/api/outfits", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fullImageUrl: objectPath, dateWorn, notes: notes || null }),
       });
-      if (!outfitResponse.ok) throw new Error("Failed to create outfit");
+      if (!outfitRes.ok) throw new Error("Failed to create outfit");
 
-      const outfit = await outfitResponse.json();
+      const outfit = await outfitRes.json();
       navigate(`/reconcile/${outfit.id}`);
     } catch (error) {
       toast({ title: "Upload failed", description: error instanceof Error ? error.message : "Something went wrong", variant: "destructive" });
@@ -396,7 +245,7 @@ export default function AddOutfit() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => isPasteMode ? clearImage() : navigate("/")}
+            onClick={() => (isPasteMode || awaitingPaste) ? clearImage() : navigate("/")}
             data-testid="button-back"
           >
             <ArrowLeft className="h-5 w-5" />
@@ -406,16 +255,35 @@ export default function AddOutfit() {
       </header>
 
       <main className="p-4 space-y-4">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={handleFileSelect}
-          data-testid="input-file"
-        />
+        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} data-testid="input-file" />
 
-        {isPasteMode && pastedBlob ? (
+        {awaitingPaste ? (
+          <div className="space-y-4">
+            <div
+              className="rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 flex flex-col items-center justify-center p-10 gap-3 relative cursor-default"
+              onClick={() => pasteZoneRef.current?.focus()}
+              data-testid="paste-zone"
+            >
+              <Clipboard className="h-8 w-8 text-primary/50" />
+              <p className="text-sm font-medium text-foreground">Long-press here and tap Paste</p>
+              <p className="text-xs text-muted-foreground">Or press <span className="font-mono">⌘V</span> / <span className="font-mono">Ctrl+V</span></p>
+              <div
+                ref={pasteZoneRef}
+                contentEditable
+                suppressContentEditableWarning
+                // @ts-expect-error inputMode="none" suppresses mobile keyboard
+                inputMode="none"
+                onPaste={handlePasteZoneEvent}
+                className="absolute inset-0 opacity-0 outline-none rounded-xl"
+                tabIndex={0}
+                aria-label="Paste image here"
+              />
+            </div>
+            <Button variant="ghost" className="w-full" onClick={() => setAwaitingPaste(false)} data-testid="button-cancel-paste">
+              Cancel
+            </Button>
+          </div>
+        ) : isPasteMode && pastedBlob ? (
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-medium text-foreground">Pick a background</p>
@@ -440,7 +308,7 @@ export default function AddOutfit() {
                 <button
                   key={bg.name}
                   onClick={() => setSelectedBg(i)}
-                  className={`flex-shrink-0 flex flex-col items-center gap-1.5 ${selectedBg === i ? "opacity-100" : "opacity-60 hover:opacity-80"} transition-opacity`}
+                  className={`flex-shrink-0 flex flex-col items-center gap-1.5 transition-opacity ${selectedBg === i ? "opacity-100" : "opacity-55 hover:opacity-80"}`}
                   data-testid={`button-bg-${i}`}
                   title={bg.name}
                 >
@@ -453,18 +321,8 @@ export default function AddOutfit() {
               ))}
             </div>
 
-            <Button
-              className="w-full gap-2"
-              size="lg"
-              onClick={handleComposite}
-              disabled={isCompositing}
-              data-testid="button-use-background"
-            >
-              {isCompositing ? (
-                <><Loader2 className="h-5 w-5 animate-spin" /> Compositing...</>
-              ) : (
-                <><Upload className="h-5 w-5" /> Use this background</>
-              )}
+            <Button className="w-full gap-2" size="lg" onClick={handleComposite} disabled={isCompositing} data-testid="button-use-background">
+              {isCompositing ? <><Loader2 className="h-5 w-5 animate-spin" /> Compositing...</> : <><Upload className="h-5 w-5" /> Use this background</>}
             </Button>
           </div>
         ) : !imagePreview ? (
@@ -475,25 +333,28 @@ export default function AddOutfit() {
               </div>
               <div className="text-center">
                 <h3 className="font-semibold text-foreground text-sm">Capture Your Outfit</h3>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Take a photo, upload from gallery, or paste a cutout
-                </p>
+                <p className="text-xs text-muted-foreground mt-1">Take a photo, upload from gallery, or paste a cutout</p>
               </div>
               <div className="flex gap-2 w-full max-w-xs flex-wrap justify-center">
-                <Button variant="default" className="flex-1 gap-2 min-w-[100px]" onClick={handleCameraCapture} data-testid="button-camera">
-                  <Camera className="h-4 w-4" />
-                  Camera
+                <Button
+                  variant="default"
+                  className="flex-1 gap-2 min-w-[90px]"
+                  onClick={() => { fileInputRef.current?.setAttribute("capture", "environment"); fileInputRef.current?.click(); }}
+                  data-testid="button-camera"
+                >
+                  <Camera className="h-4 w-4" /> Camera
                 </Button>
-                <Button variant="outline" className="flex-1 gap-2 min-w-[100px]" onClick={handleGallerySelect} data-testid="button-gallery">
-                  <ImageIcon className="h-4 w-4" />
-                  Gallery
+                <Button
+                  variant="outline"
+                  className="flex-1 gap-2 min-w-[90px]"
+                  onClick={() => { fileInputRef.current?.removeAttribute("capture"); fileInputRef.current?.click(); }}
+                  data-testid="button-gallery"
+                >
+                  <ImageIcon className="h-4 w-4" /> Gallery
                 </Button>
-                {canPaste && (
-                  <Button variant="outline" className="flex-1 gap-2 min-w-[100px]" onClick={handlePaste} data-testid="button-paste">
-                    <Clipboard className="h-4 w-4" />
-                    Paste
-                  </Button>
-                )}
+                <Button variant="outline" className="flex-1 gap-2 min-w-[90px]" onClick={handlePasteButtonClick} data-testid="button-paste">
+                  <Clipboard className="h-4 w-4" /> Paste
+                </Button>
               </div>
             </div>
           </Card>
@@ -501,16 +362,11 @@ export default function AddOutfit() {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium flex items-center gap-2">
-                <Crop className="h-4 w-4" />
-                Crop your photo
+                <Crop className="h-4 w-4" /> Crop your photo
               </span>
               <div className="flex gap-2">
-                <Button variant="ghost" size="sm" onClick={() => setIsCropping(false)} data-testid="button-skip-crop">
-                  Skip
-                </Button>
-                <Button size="sm" onClick={handleCropDone} data-testid="button-apply-crop">
-                  Apply
-                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setIsCropping(false)} data-testid="button-skip-crop">Skip</Button>
+                <Button size="sm" onClick={handleCropDone} data-testid="button-apply-crop">Apply</Button>
               </div>
             </div>
             <ReactCrop crop={crop} onChange={(c) => setCrop(c)} aspect={3 / 4} className="max-h-[60vh] mx-auto">
@@ -521,12 +377,7 @@ export default function AddOutfit() {
           <div className="relative">
             <Card className="overflow-hidden">
               <div className="aspect-[3/4] bg-muted relative">
-                <img
-                  ref={imgRef}
-                  src={croppedPreview || imagePreview}
-                  alt="Outfit preview"
-                  className="w-full h-full object-cover"
-                />
+                <img ref={imgRef} src={croppedPreview || imagePreview} alt="Outfit preview" className="w-full h-full object-cover" />
               </div>
             </Card>
             <div className="absolute top-2 right-2 flex gap-2">
@@ -545,40 +396,22 @@ export default function AddOutfit() {
           </div>
         )}
 
-        {!isPasteMode && (
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="date" className="text-sm">Date Worn</Label>
-              <Input id="date" type="date" value={dateWorn} onChange={(e) => setDateWorn(e.target.value)} data-testid="input-date" />
+        {!isPasteMode && !awaitingPaste && (
+          <>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="date" className="text-sm">Date Worn</Label>
+                <Input id="date" type="date" value={dateWorn} onChange={(e) => setDateWorn(e.target.value)} data-testid="input-date" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="notes" className="text-sm">Notes (optional)</Label>
+                <Textarea id="notes" placeholder="Where did you wear this? Any occasion?" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} data-testid="input-notes" />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="notes" className="text-sm">Notes (optional)</Label>
-              <Textarea
-                id="notes"
-                placeholder="Where did you wear this? Any occasion?"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={2}
-                data-testid="input-notes"
-              />
-            </div>
-          </div>
-        )}
-
-        {!isPasteMode && (
-          <Button
-            className="w-full gap-2"
-            size="lg"
-            onClick={handleSubmit}
-            disabled={!hasReadyImage || isUploading || isCropping}
-            data-testid="button-submit"
-          >
-            {isUploading ? (
-              <><Loader2 className="h-5 w-5 animate-spin" /> Saving...</>
-            ) : (
-              <><Upload className="h-5 w-5" /> Save Outfit</>
-            )}
-          </Button>
+            <Button className="w-full gap-2" size="lg" onClick={handleSubmit} disabled={!hasReadyImage || isUploading || isCropping} data-testid="button-submit">
+              {isUploading ? <><Loader2 className="h-5 w-5 animate-spin" /> Saving...</> : <><Upload className="h-5 w-5" /> Save Outfit</>}
+            </Button>
+          </>
         )}
       </main>
     </div>
