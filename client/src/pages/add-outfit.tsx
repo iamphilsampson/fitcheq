@@ -31,13 +31,25 @@ function getCroppedBlob(image: HTMLImageElement, crop: CropType): Promise<Blob> 
   );
 }
 
+async function readImageFromClipboard(): Promise<Blob | null> {
+  type ClipboardWithRead = Clipboard & { read: () => Promise<ClipboardItem[]> };
+  const items = await (navigator.clipboard as ClipboardWithRead).read();
+  for (const item of items) {
+    for (const preferred of ["image/png", "image/jpeg", "image/webp", "image/gif"]) {
+      if (item.types.includes(preferred)) return item.getType(preferred);
+    }
+    const any = item.types.find((t) => t.startsWith("image/"));
+    if (any) return item.getType(any);
+  }
+  return null;
+}
+
 export default function AddOutfit() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
-  const pasteZoneRef = useRef<HTMLDivElement>(null);
 
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -49,14 +61,12 @@ export default function AddOutfit() {
   const [isUploading, setIsUploading] = useState(false);
 
   const [isPasteMode, setIsPasteMode] = useState(false);
-  const [awaitingPaste, setAwaitingPaste] = useState(false);
   const [pastedBlob, setPastedBlob] = useState<Blob | null>(null);
   const [selectedBg, setSelectedBg] = useState(0);
   const [compositeBlob, setCompositeBlob] = useState<Blob | null>(null);
   const [isCompositing, setIsCompositing] = useState(false);
 
   const processPastedBlob = useCallback(async (blob: Blob) => {
-    setAwaitingPaste(false);
     const transparent = await hasTransparency(blob);
     if (transparent) {
       setPastedBlob(blob);
@@ -76,47 +86,51 @@ export default function AddOutfit() {
     }
   }, []);
 
+  // Keyboard paste (desktop Ctrl+V / Cmd+V) — always active on this page
   useEffect(() => {
-    const handleWindowPaste = (e: ClipboardEvent) => {
+    const handler = (e: ClipboardEvent) => {
       const items = Array.from(e.clipboardData?.items ?? []);
-      const imageItem = items.find((i) => i.type.startsWith("image/"));
-      if (!imageItem) return;
+      const imgItem = items.find((i) => i.type.startsWith("image/"));
+      if (!imgItem) return;
       e.preventDefault();
-      const blob = imageItem.getAsFile();
+      const blob = imgItem.getAsFile();
       if (blob) processPastedBlob(blob);
     };
-    window.addEventListener("paste", handleWindowPaste);
-    return () => window.removeEventListener("paste", handleWindowPaste);
+    window.addEventListener("paste", handler);
+    return () => window.removeEventListener("paste", handler);
   }, [processPastedBlob]);
 
+  // Redraw preview canvas when background changes
   useEffect(() => {
     if (!isPasteMode || !pastedBlob || !previewCanvasRef.current) return;
     const canvas = previewCanvasRef.current;
     const ctx = canvas.getContext("2d")!;
-    const bg = BACKGROUNDS[selectedBg];
-    drawBackground(ctx, bg, canvas.width, canvas.height);
+    drawBackground(ctx, BACKGROUNDS[selectedBg], canvas.width, canvas.height);
     const url = URL.createObjectURL(pastedBlob);
     const img = new Image();
     img.onload = () => { drawCutoutCentered(ctx, img, canvas.width, canvas.height); URL.revokeObjectURL(url); };
     img.src = url;
   }, [isPasteMode, pastedBlob, selectedBg]);
 
-  const handlePasteButtonClick = () => {
-    setAwaitingPaste(true);
-    setTimeout(() => pasteZoneRef.current?.focus(), 50);
-  };
-
-  const handlePasteZoneEvent = (e: React.ClipboardEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const items = Array.from(e.clipboardData.items);
-    const imageItem = items.find((i) => i.type.startsWith("image/"));
-    if (!imageItem) {
-      toast({ title: "No image found", description: "Copy a photo first, then paste it here.", variant: "destructive" });
-      setAwaitingPaste(false);
-      return;
+  const handlePasteButtonClick = async () => {
+    try {
+      const blob = await readImageFromClipboard();
+      if (blob) {
+        processPastedBlob(blob);
+      } else {
+        toast({
+          title: "No image in clipboard",
+          description: "Copy a photo first — in Photos, long-press and tap Copy or Copy Subject.",
+          variant: "destructive",
+        });
+      }
+    } catch {
+      toast({
+        title: "Couldn't read clipboard",
+        description: "Allow clipboard access when the prompt appears, then try again.",
+        variant: "destructive",
+      });
     }
-    const blob = imageItem.getAsFile();
-    if (blob) processPastedBlob(blob);
   };
 
   const handleComposite = async () => {
@@ -184,7 +198,6 @@ export default function AddOutfit() {
     setCroppedPreview(null);
     setIsCropping(false);
     setIsPasteMode(false);
-    setAwaitingPaste(false);
     setPastedBlob(null);
     setCompositeBlob(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -245,7 +258,7 @@ export default function AddOutfit() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => (isPasteMode || awaitingPaste) ? clearImage() : navigate("/")}
+            onClick={() => isPasteMode ? clearImage() : navigate("/")}
             data-testid="button-back"
           >
             <ArrowLeft className="h-5 w-5" />
@@ -257,33 +270,7 @@ export default function AddOutfit() {
       <main className="p-4 space-y-4">
         <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} data-testid="input-file" />
 
-        {awaitingPaste ? (
-          <div className="space-y-4">
-            <div
-              className="rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 flex flex-col items-center justify-center p-10 gap-3 relative cursor-default"
-              onClick={() => pasteZoneRef.current?.focus()}
-              data-testid="paste-zone"
-            >
-              <Clipboard className="h-8 w-8 text-primary/50" />
-              <p className="text-sm font-medium text-foreground">Long-press here and tap Paste</p>
-              <p className="text-xs text-muted-foreground">Or press <span className="font-mono">⌘V</span> / <span className="font-mono">Ctrl+V</span></p>
-              <div
-                ref={pasteZoneRef}
-                contentEditable
-                suppressContentEditableWarning
-                // @ts-expect-error inputMode="none" suppresses mobile keyboard
-                inputMode="none"
-                onPaste={handlePasteZoneEvent}
-                className="absolute inset-0 opacity-0 outline-none rounded-xl"
-                tabIndex={0}
-                aria-label="Paste image here"
-              />
-            </div>
-            <Button variant="ghost" className="w-full" onClick={() => setAwaitingPaste(false)} data-testid="button-cancel-paste">
-              Cancel
-            </Button>
-          </div>
-        ) : isPasteMode && pastedBlob ? (
+        {isPasteMode && pastedBlob ? (
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-medium text-foreground">Pick a background</p>
@@ -352,7 +339,12 @@ export default function AddOutfit() {
                 >
                   <ImageIcon className="h-4 w-4" /> Gallery
                 </Button>
-                <Button variant="outline" className="flex-1 gap-2 min-w-[90px]" onClick={handlePasteButtonClick} data-testid="button-paste">
+                <Button
+                  variant="outline"
+                  className="flex-1 gap-2 min-w-[90px]"
+                  onClick={handlePasteButtonClick}
+                  data-testid="button-paste"
+                >
                   <Clipboard className="h-4 w-4" /> Paste
                 </Button>
               </div>
@@ -396,7 +388,7 @@ export default function AddOutfit() {
           </div>
         )}
 
-        {!isPasteMode && !awaitingPaste && (
+        {!isPasteMode && (
           <>
             <div className="space-y-3">
               <div className="space-y-1.5">

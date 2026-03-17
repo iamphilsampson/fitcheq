@@ -29,19 +29,29 @@ interface OutfitWithItems extends Outfit {
   items: Item[];
 }
 
+async function readImageFromClipboard(): Promise<Blob | null> {
+  type ClipboardWithRead = Clipboard & { read: () => Promise<ClipboardItem[]> };
+  const items = await (navigator.clipboard as ClipboardWithRead).read();
+  for (const item of items) {
+    for (const preferred of ["image/png", "image/jpeg", "image/webp", "image/gif"]) {
+      if (item.types.includes(preferred)) return item.getType(preferred);
+    }
+    const any = item.types.find((t) => t.startsWith("image/"));
+    if (any) return item.getType(any);
+  }
+  return null;
+}
+
 export default function OutfitDetail() {
   const [, params] = useRoute("/outfits/:id");
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
-  const pasteZoneRef = useRef<HTMLDivElement>(null);
 
   const [isReuploading, setIsReuploading] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showPhotoOptions, setShowPhotoOptions] = useState(false);
-
-  const [awaitingPaste, setAwaitingPaste] = useState(false);
   const [isPasteMode, setIsPasteMode] = useState(false);
   const [pastedBlob, setPastedBlob] = useState<Blob | null>(null);
   const [selectedBg, setSelectedBg] = useState(0);
@@ -98,6 +108,7 @@ export default function OutfitDetail() {
       toast({ title: "Photo updated", description: "Outfit photo has been replaced." });
       setIsPasteMode(false);
       setPastedBlob(null);
+      setShowPhotoOptions(false);
     } catch (error) {
       toast({ title: "Upload failed", description: error instanceof Error ? error.message : "Something went wrong", variant: "destructive" });
     } finally {
@@ -107,7 +118,6 @@ export default function OutfitDetail() {
   }, [outfitId]);
 
   const processPastedBlob = useCallback(async (blob: Blob) => {
-    setAwaitingPaste(false);
     setShowPhotoOptions(false);
     const transparent = await hasTransparency(blob);
     if (transparent) {
@@ -119,20 +129,21 @@ export default function OutfitDetail() {
     }
   }, [uploadBlobAndPatch]);
 
+  // Keyboard paste (desktop Ctrl+V / Cmd+V)
   useEffect(() => {
-    const handleWindowPaste = (e: ClipboardEvent) => {
-      if (!awaitingPaste) return;
+    const handler = (e: ClipboardEvent) => {
       const items = Array.from(e.clipboardData?.items ?? []);
-      const imageItem = items.find((i) => i.type.startsWith("image/"));
-      if (!imageItem) return;
+      const imgItem = items.find((i) => i.type.startsWith("image/"));
+      if (!imgItem) return;
       e.preventDefault();
-      const blob = imageItem.getAsFile();
+      const blob = imgItem.getAsFile();
       if (blob) processPastedBlob(blob);
     };
-    window.addEventListener("paste", handleWindowPaste);
-    return () => window.removeEventListener("paste", handleWindowPaste);
-  }, [awaitingPaste, processPastedBlob]);
+    window.addEventListener("paste", handler);
+    return () => window.removeEventListener("paste", handler);
+  }, [processPastedBlob]);
 
+  // Redraw preview canvas on background change
   useEffect(() => {
     if (!isPasteMode || !pastedBlob || !previewCanvasRef.current) return;
     const canvas = previewCanvasRef.current;
@@ -144,23 +155,25 @@ export default function OutfitDetail() {
     img.src = url;
   }, [isPasteMode, pastedBlob, selectedBg]);
 
-  const handlePasteButtonClick = () => {
-    setShowPhotoOptions(false);
-    setAwaitingPaste(true);
-    setTimeout(() => pasteZoneRef.current?.focus(), 50);
-  };
-
-  const handlePasteZoneEvent = (e: React.ClipboardEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const items = Array.from(e.clipboardData.items);
-    const imageItem = items.find((i) => i.type.startsWith("image/"));
-    if (!imageItem) {
-      toast({ title: "No image found", description: "Copy a photo first, then paste it here.", variant: "destructive" });
-      setAwaitingPaste(false);
-      return;
+  const handlePasteButtonClick = async () => {
+    try {
+      const blob = await readImageFromClipboard();
+      if (blob) {
+        processPastedBlob(blob);
+      } else {
+        toast({
+          title: "No image in clipboard",
+          description: "Copy a photo first — in Photos, long-press and tap Copy or Copy Subject.",
+          variant: "destructive",
+        });
+      }
+    } catch {
+      toast({
+        title: "Couldn't read clipboard",
+        description: "Allow clipboard access when the prompt appears, then try again.",
+        variant: "destructive",
+      });
     }
-    const blob = imageItem.getAsFile();
-    if (blob) processPastedBlob(blob);
   };
 
   const handleComposite = async () => {
@@ -185,7 +198,6 @@ export default function OutfitDetail() {
 
   const cancelPhotoEdit = () => {
     setShowPhotoOptions(false);
-    setAwaitingPaste(false);
     setIsPasteMode(false);
     setPastedBlob(null);
   };
@@ -223,7 +235,7 @@ export default function OutfitDetail() {
     day: "numeric", month: "short", year: "numeric",
   });
 
-  const isEditingPhoto = awaitingPaste || isPasteMode || showPhotoOptions;
+  const isEditingPhoto = showPhotoOptions || isPasteMode;
 
   return (
     <div className="min-h-screen bg-background">
@@ -301,30 +313,6 @@ export default function OutfitDetail() {
             <Button variant="ghost" className="w-full mt-2" onClick={cancelPhotoEdit} data-testid="button-cancel-photo">
               Cancel
             </Button>
-          </div>
-        ) : awaitingPaste ? (
-          <div className="space-y-4 py-4">
-            <div
-              className="rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 flex flex-col items-center justify-center p-10 gap-3 relative cursor-default"
-              onClick={() => pasteZoneRef.current?.focus()}
-              data-testid="paste-zone"
-            >
-              <Clipboard className="h-8 w-8 text-primary/50" />
-              <p className="text-sm font-medium text-foreground">Long-press here and tap Paste</p>
-              <p className="text-xs text-muted-foreground">Or press <span className="font-mono">⌘V</span> / <span className="font-mono">Ctrl+V</span></p>
-              <div
-                ref={pasteZoneRef}
-                contentEditable
-                suppressContentEditableWarning
-                // @ts-expect-error inputMode="none" suppresses mobile keyboard
-                inputMode="none"
-                onPaste={handlePasteZoneEvent}
-                className="absolute inset-0 opacity-0 outline-none rounded-xl"
-                tabIndex={0}
-                aria-label="Paste image here"
-              />
-            </div>
-            <Button variant="ghost" className="w-full" onClick={cancelPhotoEdit} data-testid="button-cancel-paste">Cancel</Button>
           </div>
         ) : isPasteMode && pastedBlob ? (
           <div className="space-y-4">
