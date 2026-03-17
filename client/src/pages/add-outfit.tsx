@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import { Camera, Upload, ArrowLeft, Loader2, X, Image as ImageIcon, Crop } from "lucide-react";
+import exifr from "exifr";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -61,7 +62,7 @@ export default function AddOutfit() {
   const [notes, setNotes] = useState("");
   const [isUploading, setIsUploading] = useState(false);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (!file.type.startsWith("image/")) {
@@ -81,6 +82,19 @@ export default function AddOutfit() {
         setImagePreview(e.target?.result as string);
       };
       reader.readAsDataURL(file);
+
+      try {
+        const exif = await exifr.parse(file, ["DateTimeOriginal", "CreateDate", "DateTime"]);
+        const rawDate = exif?.DateTimeOriginal || exif?.CreateDate || exif?.DateTime;
+        if (rawDate instanceof Date && !isNaN(rawDate.getTime())) {
+          const y = rawDate.getFullYear();
+          const m = String(rawDate.getMonth() + 1).padStart(2, "0");
+          const d = String(rawDate.getDate()).padStart(2, "0");
+          setDateWorn(`${y}-${m}-${d}`);
+        }
+      } catch {
+        // No EXIF or unreadable — keep current date
+      }
     }
   };
 

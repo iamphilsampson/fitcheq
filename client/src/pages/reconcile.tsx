@@ -193,17 +193,26 @@ function SearchInput({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const usedIds = new Set(slots.filter((s) => s.existingItemId).map((s) => s.existingItemId));
+  const query = slot.colorBrand.toLowerCase().trim();
   const matching = (existingItems || []).filter((item) => {
     if (usedIds.has(item.id)) return false;
     if (item.category.toLowerCase() !== slot.category.toLowerCase()) return false;
     if (slot.selectedSubCategory && item.subCategory && item.subCategory.toLowerCase() !== slot.selectedSubCategory.toLowerCase()) return false;
-    const query = slot.colorBrand.toLowerCase();
     if (!query) return true;
     const itemText = [item.color, item.brand, item.subCategory, item.description].filter(Boolean).join(" ").toLowerCase();
     return itemText.includes(query);
-  });
+  }).slice(0, 6);
 
-  const showDropdown = isFocused && matching.length > 0 && slot.colorBrand.length > 0;
+  const showDropdown = isFocused && matching.length > 0;
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (!val.includes("/") && val.endsWith(" ") && val.trim().length > 0) {
+      onUpdateColorBrand(slot.id, val.trimEnd() + " / ");
+    } else {
+      onUpdateColorBrand(slot.id, val);
+    }
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!showDropdown) return;
@@ -230,7 +239,7 @@ function SearchInput({
         ref={inputRef}
         placeholder="Colour / Brand (e.g. Black / Nike)"
         value={slot.colorBrand}
-        onChange={(e) => onUpdateColorBrand(slot.id, e.target.value)}
+        onChange={handleChange}
         onFocus={() => setIsFocused(true)}
         onBlur={() => setTimeout(() => setIsFocused(false), 150)}
         onKeyDown={handleKeyDown}
@@ -238,7 +247,7 @@ function SearchInput({
         data-testid={`input-color-brand-${index}`}
       />
       {showDropdown && (
-        <div className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-md shadow-md z-20 max-h-40 overflow-y-auto" data-testid={`dropdown-${index}`}>
+        <div className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-md shadow-md z-20 max-h-48 overflow-y-auto" data-testid={`dropdown-${index}`}>
           {matching.map((item, i) => (
             <button
               key={item.id}
@@ -661,36 +670,17 @@ export default function Reconcile() {
                     className="flex items-center gap-3 cursor-pointer"
                     onClick={() => toggleExpanded(slot.id)}
                   >
-                    <SlotIcon category={slot.category} className="h-4 w-4 text-muted-foreground" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{slot.label}</span>
-                        {isFilled && (
-                          <Badge variant="secondary" className="text-xs">
-                            {selectedExisting ? (
-                              <>{selectedExisting.color ? `${selectedExisting.color} ` : ""}{selectedExisting.brand ? `${selectedExisting.brand} ` : ""}{slot.selectedSubCategory}</>
-                            ) : (
-                              <>{slot.colorBrand ? `${slot.colorBrand} ` : ""}{slot.selectedSubCategory}</>
-                            )}
-                          </Badge>
-                        )}
-                        {isFilled && selectedExisting && (
-                          <Badge variant="outline" className="text-xs">Existing</Badge>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
+                    <SlotIcon category={slot.category} className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <div className="flex-1 min-w-0 flex items-center gap-2">
+                      <span className="text-sm font-medium">{slot.label}</span>
                       {isFilled && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(e) => { e.stopPropagation(); clearSlot(slot.id); }}
-                          data-testid={`button-clear-${index}`}
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
+                        <Badge variant="secondary" className="text-xs truncate max-w-[120px]">
+                          {slot.selectedSubCategory}
+                        </Badge>
                       )}
-                      {!slot.required && !isExtra && (
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {!slot.required && !isExtra && !isFilled && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -701,7 +691,7 @@ export default function Reconcile() {
                           <X className="h-3.5 w-3.5" />
                         </Button>
                       )}
-                      {isExtra && (
+                      {isExtra && !isFilled && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -741,35 +731,58 @@ export default function Reconcile() {
                         </div>
                       )}
 
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-1.5">Select type</p>
-                        <div className="flex gap-1.5 flex-wrap">
-                          {slot.subCategories.map((sub) => (
-                            <button
-                              key={sub}
-                              className={`relative px-2.5 py-1.5 rounded-full text-xs font-medium ${
-                                slot.selectedSubCategory === sub && !slot.existingItemId
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-muted text-foreground hover-elevate"
-                              }`}
-                              onClick={() => selectSubCategory(slot.id, sub)}
-                              data-testid={`chip-${sub.replace(/\s+/g, "-").toLowerCase()}-${index}`}
-                            >
-                              {sub}
-                            </button>
-                          ))}
+                      {!slot.selectedSubCategory && (
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1.5">Select type</p>
+                          <div className="flex gap-1.5 flex-wrap">
+                            {slot.subCategories.map((sub) => (
+                              <button
+                                key={sub}
+                                className="relative px-2.5 py-1.5 rounded-full text-xs font-medium bg-muted text-foreground hover-elevate"
+                                onClick={() => selectSubCategory(slot.id, sub)}
+                                data-testid={`chip-${sub.replace(/\s+/g, "-").toLowerCase()}-${index}`}
+                              >
+                                {sub}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
+                      )}
 
                       {slot.selectedSubCategory && !slot.existingItemId && (
-                        <SearchInput
-                          slot={slot}
-                          index={index}
-                          existingItems={existingItems}
-                          slots={slots}
-                          onSelectExisting={selectExistingItem}
-                          onUpdateColorBrand={updateColorBrand}
-                        />
+                        <>
+                          <div className="flex flex-wrap gap-1.5">
+                            <button
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium bg-primary text-primary-foreground hover-elevate"
+                              onClick={() => clearSlot(slot.id)}
+                              data-testid={`chip-selected-${index}`}
+                            >
+                              {slot.selectedSubCategory}
+                              <X className="h-3 w-3 flex-shrink-0" />
+                            </button>
+                          </div>
+                          <SearchInput
+                            slot={slot}
+                            index={index}
+                            existingItems={existingItems}
+                            slots={slots}
+                            onSelectExisting={selectExistingItem}
+                            onUpdateColorBrand={updateColorBrand}
+                          />
+                        </>
+                      )}
+
+                      {slot.existingItemId && selectedExisting && (
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium bg-primary text-primary-foreground hover-elevate"
+                            onClick={() => clearSlot(slot.id)}
+                            data-testid={`chip-existing-${index}`}
+                          >
+                            {[selectedExisting.color, selectedExisting.brand].filter(Boolean).join(" / ") || selectedExisting.subCategory || selectedExisting.category}
+                            <X className="h-3 w-3 flex-shrink-0" />
+                          </button>
+                        </div>
                       )}
                     </div>
                   )}

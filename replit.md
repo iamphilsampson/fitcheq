@@ -52,10 +52,14 @@ The database schema uses a many-to-many relationship pattern:
 - Required slots (Top, Bottoms, Shoes) are expanded by default; optional slots (Layer, Accessories) are collapsed
 - Gender preset (male/female) stored in localStorage key `fitcheck-preset`, defaults to "male"
 - Color/brand input uses "/" separator (e.g., "Black / Nike") parsed into separate color and brand fields on save
-- Input doubles as wardrobe search: typing filters existing items with matching category/subcategory, shows dropdown with keyboard navigation (ArrowUp/Down/Enter)
+- Auto-inserts " / " after first word + space if no "/" is present yet (colour detection)
+- Input doubles as wardrobe search: shows matching items on focus (even empty query) and as user types; filters by category/subcategory/brand/color; keyboard navigation (ArrowUp/Down/Enter)
+- Slot header row: icon | label | truncated subcategory badge | chevron. No "Existing" badge, no standalone X
+- Type selector pills hidden once a subcategory is chosen; selected type shown as chip-with-X inside expanded area
+- When existing item selected: shown as chip-with-X in expanded area; colour/brand input hidden; no type pills
 - Custom SVG icons: JacketIcon (Outerwear), TrousersIcon (Bottoms), SunglassesIcon (Accessories)
 - Horizontal divider with + icon appears between slots on hover for inserting new slots at specific positions
-- Back button shows save confirmation dialog when items are tagged
+- Back button shows save confirmation dialog only when changes detected vs initial load
 - Fullscreen image preview dialog when tapping the outfit photo
 - Toast messages auto-dismiss after 2 seconds
 

@@ -161,10 +161,9 @@ export default function OutfitDetail() {
     );
   }
 
-  const formattedDate = new Date(outfit.dateWorn).toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
+  const formattedDate = new Date(outfit.dateWorn + "T12:00:00").toLocaleDateString("en-GB", {
     day: "numeric",
+    month: "short",
     year: "numeric",
   });
 
@@ -181,18 +180,19 @@ export default function OutfitDetail() {
 
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
         <div className="px-4 py-2 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-1 min-w-0 overflow-hidden">
             <Button
               variant="ghost"
               size="icon"
               onClick={() => navigate("/")}
               data-testid="button-back"
+              className="flex-shrink-0"
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <h1 className="text-base font-semibold text-foreground">{formattedDate}</h1>
+            <h1 className="text-base font-semibold text-foreground truncate min-w-0">{formattedDate}</h1>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-shrink-0">
             <Button
               variant="ghost"
               size="icon"
