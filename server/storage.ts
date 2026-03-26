@@ -2,12 +2,14 @@ import {
   items,
   outfits,
   outfitItems,
+  activityLog,
   type Item,
   type InsertItem,
   type Outfit,
   type InsertOutfit,
   type OutfitItem,
   type InsertOutfitItem,
+  type ActivityLogEntry,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, sql } from "drizzle-orm";
@@ -35,6 +37,9 @@ export interface IStorage {
   replaceItemsOnOutfit(outfitId: number, itemIds: number[]): Promise<void>;
   removeItemFromOutfit(outfitId: number, itemId: number): Promise<void>;
   getOutfitsByItem(itemId: number): Promise<Outfit[]>;
+
+  // Activity log
+  getActivityLog(): Promise<ActivityLogEntry[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -67,6 +72,8 @@ export class DatabaseStorage implements IStorage {
 
   async createItem(item: InsertItem): Promise<Item> {
     const [newItem] = await db.insert(items).values(item).returning();
+    const desc = [newItem.color, newItem.subCategory || newItem.category, newItem.brand].filter(Boolean).join(" ");
+    await db.insert(activityLog).values({ action: "created", entityType: "item", entityId: newItem.id, description: desc });
     return newItem;
   }
 
@@ -76,6 +83,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteItem(id: number): Promise<void> {
+    const [item] = await db.select().from(items).where(eq(items.id, id));
+    if (item) {
+      const desc = [item.color, item.subCategory || item.category, item.brand].filter(Boolean).join(" ");
+      await db.insert(activityLog).values({ action: "deleted", entityType: "item", entityId: id, description: desc });
+    }
     await db.delete(outfitItems).where(eq(outfitItems.itemId, id));
     await db.delete(items).where(eq(items.id, id));
   }
@@ -125,6 +137,7 @@ export class DatabaseStorage implements IStorage {
 
   async createOutfit(outfit: InsertOutfit): Promise<Outfit> {
     const [newOutfit] = await db.insert(outfits).values(outfit).returning();
+    await db.insert(activityLog).values({ action: "created", entityType: "outfit", entityId: newOutfit.id, description: `Outfit from ${newOutfit.dateWorn}` });
     return newOutfit;
   }
 
@@ -134,6 +147,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteOutfit(id: number): Promise<void> {
+    const [outfit] = await db.select().from(outfits).where(eq(outfits.id, id));
+    if (outfit) {
+      await db.insert(activityLog).values({ action: "deleted", entityType: "outfit", entityId: id, description: `Outfit from ${outfit.dateWorn}` });
+    }
     await db.delete(outfitItems).where(eq(outfitItems.outfitId, id));
     await db.delete(outfits).where(eq(outfits.id, id));
   }
@@ -170,6 +187,10 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(outfits.dateWorn));
 
     return linkedOutfits.map((row) => row.outfit);
+  }
+
+  async getActivityLog(): Promise<ActivityLogEntry[]> {
+    return db.select().from(activityLog).orderBy(desc(activityLog.createdAt));
   }
 }
 

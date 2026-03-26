@@ -195,6 +195,17 @@ export async function registerRoutes(
     }
   });
 
+  // Activity log
+  app.get("/api/activity", async (req, res) => {
+    try {
+      const log = await storage.getActivityLog();
+      res.json(log);
+    } catch (error) {
+      console.error("Error fetching activity log:", error);
+      res.status(500).json({ error: "Failed to fetch activity log" });
+    }
+  });
+
   // AI Outfit Analysis endpoint
   app.post("/api/outfits/analyze", async (req, res) => {
     try {

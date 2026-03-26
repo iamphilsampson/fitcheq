@@ -447,25 +447,34 @@ export default function Home() {
             <DialogTitle>Settings</DialogTitle>
             <DialogDescription>Choose your clothing preset</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Clothing preset</p>
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                variant={preset === "male" ? "default" : "outline"}
-                className="w-full"
-                onClick={() => handlePresetChange("male")}
-                data-testid="button-preset-male"
-              >
-                Male
-              </Button>
-              <Button
-                variant={preset === "female" ? "default" : "outline"}
-                className="w-full"
-                onClick={() => handlePresetChange("female")}
-                data-testid="button-preset-female"
-              >
-                Female
-              </Button>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Clothing preset</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant={preset === "male" ? "default" : "outline"}
+                  className="w-full"
+                  onClick={() => handlePresetChange("male")}
+                  data-testid="button-preset-male"
+                >
+                  Male
+                </Button>
+                <Button
+                  variant={preset === "female" ? "default" : "outline"}
+                  className="w-full"
+                  onClick={() => handlePresetChange("female")}
+                  data-testid="button-preset-female"
+                >
+                  Female
+                </Button>
+              </div>
+            </div>
+            <div className="border-t pt-3">
+              <Link href="/activity" onClick={() => setShowSettings(false)}>
+                <Button variant="ghost" className="w-full justify-start text-sm text-muted-foreground" data-testid="button-activity-log">
+                  Activity Log
+                </Button>
+              </Link>
             </div>
           </div>
         </DialogContent>

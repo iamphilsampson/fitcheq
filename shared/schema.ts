@@ -85,6 +85,18 @@ export const detectedItemSchema = z.object({
 
 export type DetectedItem = z.infer<typeof detectedItemSchema>;
 
+// Activity log table
+export const activityLog = pgTable("activity_log", {
+  id: serial("id").primaryKey(),
+  action: text("action").notNull(), // "created" | "deleted"
+  entityType: text("entity_type").notNull(), // "outfit" | "item"
+  entityId: integer("entity_id").notNull(),
+  description: text("description").notNull(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export type ActivityLogEntry = typeof activityLog.$inferSelect;
+
 // Keep existing users table for compatibility
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
