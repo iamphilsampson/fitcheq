@@ -142,19 +142,19 @@ export default function PasteTest() {
       </div>
 
       {/* Method 3 */}
-      <div className="rounded-xl border p-4 flex flex-col gap-3">
-        <div className="font-semibold text-sm">Method 3 — styled as an input field, no keyboard</div>
+      <div className="rounded-xl border p-4 flex flex-col gap-3 items-center">
+        <div className="font-semibold text-sm self-start">Method 3 — styled as an input field, no keyboard</div>
         <div
           ref={pasteZone3Ref}
           contentEditable
           suppressContentEditableWarning
           inputMode="none"
           onPaste={makePasteHandler("method3")}
-          className="min-h-[72px] rounded-lg border border-input bg-muted/40 px-4 flex items-center text-base font-medium focus:border-ring focus:outline-none select-none"
+          className="rounded-lg border border-input bg-muted/40 px-8 py-4 text-base font-medium focus:border-ring focus:outline-none select-none text-center"
         >
           Paste
         </div>
-        <p className="text-xs text-muted-foreground">Tap and hold the box above, then choose Paste from the menu.</p>
+        <p className="text-xs text-muted-foreground text-center">Tap and hold the box above, then choose Paste from the menu.</p>
         <PreviewResult result={result} method="method3" />
       </div>
 
