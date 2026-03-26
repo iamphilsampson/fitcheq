@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRoute, useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Tag, X, MoreVertical, Trash2, Camera, Image as ImageIcon, Clipboard, Upload } from "lucide-react";
+import { ArrowLeft, Loader2, Tag, X, MoreVertical, Trash2, Camera, Image as ImageIcon, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -29,25 +29,13 @@ interface OutfitWithItems extends Outfit {
   items: Item[];
 }
 
-async function readImageFromClipboard(): Promise<Blob | null> {
-  type ClipboardWithRead = Clipboard & { read: () => Promise<ClipboardItem[]> };
-  const items = await (navigator.clipboard as ClipboardWithRead).read();
-  for (const item of items) {
-    for (const preferred of ["image/png", "image/jpeg", "image/webp", "image/gif"]) {
-      if (item.types.includes(preferred)) return item.getType(preferred);
-    }
-    const any = item.types.find((t) => t.startsWith("image/"));
-    if (any) return item.getType(any);
-  }
-  return null;
-}
-
 export default function OutfitDetail() {
   const [, params] = useRoute("/outfits/:id");
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const pasteZoneRef = useRef<HTMLDivElement>(null);
 
   const [isReuploading, setIsReuploading] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -129,9 +117,10 @@ export default function OutfitDetail() {
     }
   }, [uploadBlobAndPatch]);
 
-  // Keyboard paste (desktop Ctrl+V / Cmd+V)
+  // Desktop Ctrl+V / Cmd+V — fires when paste zone is not focused
   useEffect(() => {
     const handler = (e: ClipboardEvent) => {
+      if (document.activeElement === pasteZoneRef.current) return;
       const items = Array.from(e.clipboardData?.items ?? []);
       const imgItem = items.find((i) => i.type.startsWith("image/"));
       if (!imgItem) return;
@@ -154,27 +143,6 @@ export default function OutfitDetail() {
     img.onload = () => { drawCutoutCentered(ctx, img, canvas.width, canvas.height); URL.revokeObjectURL(url); };
     img.src = url;
   }, [isPasteMode, pastedBlob, selectedBg]);
-
-  const handlePasteButtonClick = async () => {
-    try {
-      const blob = await readImageFromClipboard();
-      if (blob) {
-        processPastedBlob(blob);
-      } else {
-        toast({
-          title: "No image in clipboard",
-          description: "Copy a photo first — in Photos, long-press and tap Copy or Copy Subject.",
-          variant: "destructive",
-        });
-      }
-    } catch {
-      toast({
-        title: "Couldn't read clipboard",
-        description: "Allow clipboard access when the prompt appears, then try again.",
-        variant: "destructive",
-      });
-    }
-  };
 
   const handleComposite = async () => {
     if (!pastedBlob) return;
@@ -285,7 +253,7 @@ export default function OutfitDetail() {
       <main className="p-4 space-y-4">
         {showPhotoOptions ? (
           <div className="space-y-3 py-4">
-            <p className="text-sm text-muted-foreground text-center mb-6">Choose how to replace the photo</p>
+            <p className="text-sm text-muted-foreground text-center mb-2">Choose how to replace the photo</p>
             <Button
               variant="outline"
               className="w-full gap-3 justify-start min-h-12 text-sm"
@@ -302,14 +270,33 @@ export default function OutfitDetail() {
             >
               <ImageIcon className="h-5 w-5 text-muted-foreground" /> Choose from gallery
             </Button>
-            <Button
-              variant="outline"
-              className="w-full gap-3 justify-start min-h-12 text-sm"
-              onClick={handlePasteButtonClick}
-              data-testid="button-paste"
-            >
-              <Clipboard className="h-5 w-5 text-muted-foreground" /> Paste a cutout
-            </Button>
+            <div className="flex flex-col items-center gap-1.5 pt-1">
+              <div className="flex items-center gap-2 w-full">
+                <div className="flex-1 h-px bg-border" />
+                <span className="text-xs text-muted-foreground">or paste a cutout</span>
+                <div className="flex-1 h-px bg-border" />
+              </div>
+              <div
+                ref={pasteZoneRef}
+                contentEditable
+                suppressContentEditableWarning
+                inputMode="none"
+                onPaste={(e) => {
+                  const items = Array.from(e.clipboardData?.items ?? []);
+                  const img = items.find((i) => i.type.startsWith("image/"));
+                  if (!img) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const blob = img.getAsFile();
+                  if (blob) processPastedBlob(blob);
+                }}
+                className="rounded-lg border border-input bg-muted/40 px-8 py-3 text-sm font-medium focus:border-ring focus:outline-none select-none"
+                data-testid="paste-zone"
+              >
+                Paste
+              </div>
+              <p className="text-xs text-muted-foreground">Tap and hold, then choose Paste</p>
+            </div>
             <Button variant="ghost" className="w-full mt-2" onClick={cancelPhotoEdit} data-testid="button-cancel-photo">
               Cancel
             </Button>

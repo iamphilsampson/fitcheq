@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Camera, Upload, ArrowLeft, Loader2, X, Image as ImageIcon, Crop, Clipboard } from "lucide-react";
+import { Camera, Upload, ArrowLeft, Loader2, X, Image as ImageIcon, Crop } from "lucide-react";
 import exifr from "exifr";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -31,25 +31,13 @@ function getCroppedBlob(image: HTMLImageElement, crop: CropType): Promise<Blob> 
   );
 }
 
-async function readImageFromClipboard(): Promise<Blob | null> {
-  type ClipboardWithRead = Clipboard & { read: () => Promise<ClipboardItem[]> };
-  const items = await (navigator.clipboard as ClipboardWithRead).read();
-  for (const item of items) {
-    for (const preferred of ["image/png", "image/jpeg", "image/webp", "image/gif"]) {
-      if (item.types.includes(preferred)) return item.getType(preferred);
-    }
-    const any = item.types.find((t) => t.startsWith("image/"));
-    if (any) return item.getType(any);
-  }
-  return null;
-}
-
 export default function AddOutfit() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const pasteZoneRef = useRef<HTMLDivElement>(null);
 
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -86,9 +74,10 @@ export default function AddOutfit() {
     }
   }, []);
 
-  // Keyboard paste (desktop Ctrl+V / Cmd+V) — always active on this page
+  // Desktop Ctrl+V / Cmd+V — fires when paste zone is not focused
   useEffect(() => {
     const handler = (e: ClipboardEvent) => {
+      if (document.activeElement === pasteZoneRef.current) return;
       const items = Array.from(e.clipboardData?.items ?? []);
       const imgItem = items.find((i) => i.type.startsWith("image/"));
       if (!imgItem) return;
@@ -111,27 +100,6 @@ export default function AddOutfit() {
     img.onload = () => { drawCutoutCentered(ctx, img, canvas.width, canvas.height); URL.revokeObjectURL(url); };
     img.src = url;
   }, [isPasteMode, pastedBlob, selectedBg]);
-
-  const handlePasteButtonClick = async () => {
-    try {
-      const blob = await readImageFromClipboard();
-      if (blob) {
-        processPastedBlob(blob);
-      } else {
-        toast({
-          title: "No image in clipboard",
-          description: "Copy a photo first — in Photos, long-press and tap Copy or Copy Subject.",
-          variant: "destructive",
-        });
-      }
-    } catch {
-      toast({
-        title: "Couldn't read clipboard",
-        description: "Allow clipboard access when the prompt appears, then try again.",
-        variant: "destructive",
-      });
-    }
-  };
 
   const handleComposite = async () => {
     if (!pastedBlob) return;
@@ -322,10 +290,10 @@ export default function AddOutfit() {
                 <h3 className="font-semibold text-foreground text-sm">Capture Your Outfit</h3>
                 <p className="text-xs text-muted-foreground mt-1">Take a photo, upload from gallery, or paste a cutout</p>
               </div>
-              <div className="flex gap-2 w-full max-w-xs flex-wrap justify-center">
+              <div className="flex gap-2 w-full max-w-xs justify-center">
                 <Button
                   variant="default"
-                  className="flex-1 gap-2 min-w-[90px]"
+                  className="flex-1 gap-2"
                   onClick={() => { fileInputRef.current?.setAttribute("capture", "environment"); fileInputRef.current?.click(); }}
                   data-testid="button-camera"
                 >
@@ -333,20 +301,39 @@ export default function AddOutfit() {
                 </Button>
                 <Button
                   variant="outline"
-                  className="flex-1 gap-2 min-w-[90px]"
+                  className="flex-1 gap-2"
                   onClick={() => { fileInputRef.current?.removeAttribute("capture"); fileInputRef.current?.click(); }}
                   data-testid="button-gallery"
                 >
                   <ImageIcon className="h-4 w-4" /> Gallery
                 </Button>
-                <Button
-                  variant="outline"
-                  className="flex-1 gap-2 min-w-[90px]"
-                  onClick={handlePasteButtonClick}
-                  data-testid="button-paste"
+              </div>
+              <div className="flex flex-col items-center gap-1.5 w-full">
+                <div className="flex items-center gap-2 w-full max-w-xs">
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-xs text-muted-foreground">or paste a cutout</span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+                <div
+                  ref={pasteZoneRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  inputMode="none"
+                  onPaste={(e) => {
+                    const items = Array.from(e.clipboardData?.items ?? []);
+                    const img = items.find((i) => i.type.startsWith("image/"));
+                    if (!img) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const blob = img.getAsFile();
+                    if (blob) processPastedBlob(blob);
+                  }}
+                  className="rounded-lg border border-input bg-muted/40 px-8 py-3 text-sm font-medium focus:border-ring focus:outline-none select-none"
+                  data-testid="paste-zone"
                 >
-                  <Clipboard className="h-4 w-4" /> Paste
-                </Button>
+                  Paste
+                </div>
+                <p className="text-xs text-muted-foreground">Tap and hold, then choose Paste</p>
               </div>
             </div>
           </Card>
