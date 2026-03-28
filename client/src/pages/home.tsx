@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearch } from "wouter";
-import { Camera, Shirt, Calendar, LayoutGrid, List, Settings, Plus, X, Loader2, Check } from "lucide-react";
+import { Camera, Shirt, Calendar, LayoutGrid, List, Settings, Plus, X, Loader2, Check, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Item, Outfit } from "@shared/schema";
@@ -24,14 +31,30 @@ function getPreset(): "male" | "female" {
   return (localStorage.getItem("fitcheck-preset") as "male" | "female") || "male";
 }
 
-const PRESETS: Record<string, { subCategories: string[] }[]> = {
-  male: [
-    { subCategories: ["T-Shirt", "Long Sleeve", "Shirt (Short)", "Shirt (Long)", "Vest", "Jumper", "Hoodie"] },
-  ],
-  female: [
-    { subCategories: ["T-Shirt", "Blouse", "Crop Top", "Tank Top", "Sweater", "Hoodie", "Cami"] },
-  ],
+const ALL_CATEGORIES: Record<"male" | "female", Record<string, string[]>> = {
+  male: {
+    Tops: ["T-Shirt", "Long Sleeve", "Shirt (Short)", "Shirt (Long)", "Vest", "Jumper", "Hoodie"],
+    Outerwear: ["Coat", "Jacket", "Overshirt", "Windbreaker"],
+    Bottoms: ["Jeans", "Trousers", "Shorts"],
+    Footwear: ["Wallabee", "Trainers"],
+    Accessories: ["Hat", "Bag", "Belt", "Sunnies"],
+  },
+  female: {
+    Tops: ["T-Shirt", "Blouse", "Crop Top", "Tank Top", "Sweater", "Hoodie", "Cami"],
+    Outerwear: ["Jacket", "Coat", "Blazer", "Cardigan", "Trench"],
+    Bottoms: ["Jeans", "Trousers", "Skirt", "Shorts", "Leggings"],
+    Footwear: ["Sneakers", "Boots", "Heels", "Sandals", "Flats", "Loafers"],
+    Accessories: ["Bag", "Belt", "Sunglasses", "Jewelry", "Scarf", "Hat"],
+  },
 };
+
+function getSubCategoryOptions(category: string, preset: "male" | "female", existingItems: Item[]): string[] {
+  const presetSubs = ALL_CATEGORIES[preset]?.[category] ?? [];
+  const existingSubs = existingItems
+    .filter((i) => i.category === category && i.subCategory)
+    .map((i) => i.subCategory!);
+  return [...new Set([...presetSubs, ...existingSubs])];
+}
 
 interface BulkEntry {
   id: string;
@@ -50,6 +73,7 @@ export default function Home() {
   const [preset, setPreset] = useState<"male" | "female">(getPreset);
   const [bulkAddCategory, setBulkAddCategory] = useState<string | null>(null);
   const [bulkEntries, setBulkEntries] = useState<BulkEntry[]>([]);
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
   const handlePresetChange = (value: "male" | "female") => {
@@ -80,6 +104,11 @@ export default function Home() {
   const startBulkAdd = (category: string) => {
     setBulkAddCategory(category);
     setBulkEntries([{ id: crypto.randomUUID(), subCategory: "", colorBrand: "" }]);
+    setExpandedCategories((prev) => {
+      const next = new Set(prev);
+      next.add(category);
+      return next;
+    });
   };
 
   const addBulkRow = () => {
@@ -308,125 +337,196 @@ export default function Home() {
                 description="Add your first outfit to start building your wardrobe"
               />
             ) : (
-              <div className="space-y-4">
-                {Object.entries(groupedItems || {}).map(([category, categoryItems]) => (
-                  <div key={category}>
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{category}</h2>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">
-                          {categoryItems.length}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-muted-foreground"
-                          onClick={() => startBulkAdd(category)}
-                          data-testid={`button-add-${category.toLowerCase()}`}
+              <>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs text-muted-foreground">{items.length} items</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-muted-foreground h-7 px-2"
+                    onClick={() => {
+                      const allCats = Object.keys(groupedItems || {});
+                      const allExpanded = allCats.every((c) => expandedCategories.has(c));
+                      setExpandedCategories(allExpanded ? new Set() : new Set(allCats));
+                    }}
+                    data-testid="button-toggle-all"
+                  >
+                    {Object.keys(groupedItems || {}).every((c) => expandedCategories.has(c))
+                      ? "Collapse all"
+                      : "Expand all"}
+                  </Button>
+                </div>
+
+                <div className="divide-y">
+                  {Object.entries(groupedItems || {}).map(([category, categoryItems]) => {
+                    const isExpanded = expandedCategories.has(category);
+                    const subCategoryOptions = getSubCategoryOptions(category, preset, items || []);
+                    return (
+                      <div key={category}>
+                        <button
+                          className="w-full flex items-center gap-2 py-2.5 text-left"
+                          onClick={() =>
+                            setExpandedCategories((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(category)) next.delete(category);
+                              else next.add(category);
+                              return next;
+                            })
+                          }
+                          data-testid={`button-toggle-${category.toLowerCase()}`}
                         >
-                          <Plus className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    {bulkAddCategory === category && (
-                      <div className="mb-2 p-3 rounded-lg border bg-card space-y-2" data-testid="bulk-add-panel">
-                        {bulkEntries.map((entry, idx) => (
-                          <div key={entry.id} className="flex items-center gap-2">
-                            <Input
-                              placeholder="Type (e.g. T-Shirt)"
-                              value={entry.subCategory}
-                              onChange={(e) => updateBulkEntry(entry.id, "subCategory", e.target.value)}
-                              className="text-sm flex-1"
-                              autoFocus={idx === bulkEntries.length - 1}
-                              data-testid={`bulk-subcategory-${idx}`}
-                            />
-                            <Input
-                              placeholder="Colour / Brand"
-                              value={entry.colorBrand}
-                              onChange={(e) => updateBulkEntry(entry.id, "colorBrand", e.target.value)}
-                              className="text-sm flex-1"
-                              data-testid={`bulk-colorbrand-${idx}`}
-                            />
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeBulkEntry(entry.id)}
-                              className="flex-shrink-0 text-muted-foreground"
-                              data-testid={`bulk-remove-${idx}`}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        ))}
-                        <div className="flex items-center gap-2 pt-1">
+                          {isExpanded ? (
+                            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                          ) : (
+                            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                          )}
+                          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex-1">
+                            {category}
+                          </span>
+                          <span className="text-xs text-muted-foreground">{categoryItems.length}</span>
                           <Button
                             variant="ghost"
-                            size="sm"
-                            className="gap-1 text-xs text-muted-foreground"
-                            onClick={addBulkRow}
-                            data-testid="button-bulk-add-row"
+                            size="icon"
+                            className="text-muted-foreground ml-1"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startBulkAdd(category);
+                            }}
+                            data-testid={`button-add-${category.toLowerCase()}`}
                           >
-                            <Plus className="h-3 w-3" />
-                            Add row
+                            <Plus className="h-3.5 w-3.5" />
                           </Button>
-                          <div className="flex-1" />
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs"
-                            onClick={() => { setBulkAddCategory(null); setBulkEntries([]); }}
-                            data-testid="button-bulk-cancel"
-                          >
-                            Cancel
-                          </Button>
-                          <Button
-                            size="sm"
-                            className="text-xs gap-1"
-                            onClick={saveBulkItems}
-                            disabled={isSavingBulk}
-                            data-testid="button-bulk-save"
-                          >
-                            {isSavingBulk ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                            Save
-                          </Button>
-                        </div>
-                      </div>
-                    )}
+                        </button>
 
-                    <div className="space-y-0">
-                      {categoryItems.map((item) => (
-                        <Link key={item.id} href={`/items/${item.id}`}>
-                          <div
-                            className="flex items-center gap-2 py-2 px-1 rounded hover-elevate cursor-pointer"
-                            data-testid={`item-row-${item.id}`}
-                          >
-                            {item.color && (
-                              <span
-                                className="w-2.5 h-2.5 rounded-full border flex-shrink-0"
-                                style={{ backgroundColor: item.color.toLowerCase() }}
-                              />
+                        {isExpanded && (
+                          <>
+                            {bulkAddCategory === category && (
+                              <div className="mb-2 p-3 rounded-lg border bg-card space-y-2" data-testid="bulk-add-panel">
+                                {bulkEntries.map((entry, idx) => (
+                                  <div key={entry.id} className="flex items-center gap-2">
+                                    {subCategoryOptions.length > 0 ? (
+                                      <Select
+                                        value={entry.subCategory}
+                                        onValueChange={(v) => updateBulkEntry(entry.id, "subCategory", v)}
+                                      >
+                                        <SelectTrigger
+                                          className="text-sm flex-1"
+                                          data-testid={`bulk-subcategory-${idx}`}
+                                        >
+                                          <SelectValue placeholder="Type" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {subCategoryOptions.map((sub) => (
+                                            <SelectItem key={sub} value={sub}>
+                                              {sub}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    ) : (
+                                      <Input
+                                        placeholder="Type"
+                                        value={entry.subCategory}
+                                        onChange={(e) => updateBulkEntry(entry.id, "subCategory", e.target.value)}
+                                        className="text-sm flex-1"
+                                        autoFocus={idx === bulkEntries.length - 1}
+                                        data-testid={`bulk-subcategory-${idx}`}
+                                      />
+                                    )}
+                                    <Input
+                                      placeholder="Colour / Brand"
+                                      value={entry.colorBrand}
+                                      onChange={(e) => updateBulkEntry(entry.id, "colorBrand", e.target.value)}
+                                      className="text-sm flex-1"
+                                      data-testid={`bulk-colorbrand-${idx}`}
+                                    />
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => removeBulkEntry(entry.id)}
+                                      className="flex-shrink-0 text-muted-foreground"
+                                      data-testid={`bulk-remove-${idx}`}
+                                    >
+                                      <X className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                ))}
+                                <div className="flex items-center gap-2 pt-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="gap-1 text-xs text-muted-foreground"
+                                    onClick={addBulkRow}
+                                    data-testid="button-bulk-add-row"
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                    Add row
+                                  </Button>
+                                  <div className="flex-1" />
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-xs"
+                                    onClick={() => { setBulkAddCategory(null); setBulkEntries([]); }}
+                                    data-testid="button-bulk-cancel"
+                                  >
+                                    Cancel
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    className="text-xs gap-1"
+                                    onClick={saveBulkItems}
+                                    disabled={isSavingBulk}
+                                    data-testid="button-bulk-save"
+                                  >
+                                    {isSavingBulk ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <Check className="h-3 w-3" />
+                                    )}
+                                    Save
+                                  </Button>
+                                </div>
+                              </div>
                             )}
-                            <span className="text-sm font-medium truncate">
-                              {item.subCategory || item.category}
-                            </span>
-                            {item.brand && (
-                              <span className="text-xs text-muted-foreground truncate">
-                                {item.brand}
-                              </span>
-                            )}
-                            {item.color && !item.brand && (
-                              <span className="text-xs text-muted-foreground truncate">
-                                {item.color}
-                              </span>
-                            )}
-                          </div>
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+
+                            <div className="space-y-0 pb-1">
+                              {categoryItems.map((item) => (
+                                <Link key={item.id} href={`/items/${item.id}`}>
+                                  <div
+                                    className="flex items-center gap-2 py-2 px-1 rounded hover-elevate cursor-pointer"
+                                    data-testid={`item-row-${item.id}`}
+                                  >
+                                    {item.color && (
+                                      <span
+                                        className="w-2.5 h-2.5 rounded-full border flex-shrink-0"
+                                        style={{ backgroundColor: item.color.toLowerCase() }}
+                                      />
+                                    )}
+                                    <span className="text-sm font-medium truncate">
+                                      {item.subCategory || item.category}
+                                    </span>
+                                    {item.brand && (
+                                      <span className="text-xs text-muted-foreground truncate">
+                                        {item.brand}
+                                      </span>
+                                    )}
+                                    {item.color && !item.brand && (
+                                      <span className="text-xs text-muted-foreground truncate">
+                                        {item.color}
+                                      </span>
+                                    )}
+                                  </div>
+                                </Link>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </TabsContent>
         </Tabs>
