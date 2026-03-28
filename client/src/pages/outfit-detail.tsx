@@ -283,7 +283,7 @@ export default function OutfitDetail() {
                 inputMode="none"
                 onPaste={(e) => {
                   const items = Array.from(e.clipboardData?.items ?? []);
-                  const img = items.find((i) => i.type.startsWith("image/"));
+                  const img = items.find((i) => i.type === "image/png") ?? items.find((i) => i.type.startsWith("image/"));
                   if (!img) return;
                   e.preventDefault();
                   e.stopPropagation();
