@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Camera, Upload, ArrowLeft, Loader2, X, Image as ImageIcon, Crop } from "lucide-react";
+import { Camera, Upload, ArrowLeft, Loader2, X, Image as ImageIcon, Crop, Wand2 } from "lucide-react";
 import exifr from "exifr";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import ReactCrop, { type Crop as CropType, centerCrop, makeAspectCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
-import { BACKGROUNDS, drawBackground, drawCutoutCentered, hasTransparency, compositeOnBackground } from "@/lib/imageUtils";
+import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground } from "@/lib/imageUtils";
 
 function getCroppedBlob(image: HTMLImageElement, crop: CropType): Promise<Blob> {
   const canvas = document.createElement("canvas");
@@ -37,85 +37,39 @@ export default function AddOutfit() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
-  const pasteZoneRef = useRef<HTMLDivElement>(null);
 
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [crop, setCrop] = useState<CropType>();
   const [isCropping, setIsCropping] = useState(false);
   const [croppedPreview, setCroppedPreview] = useState<string | null>(null);
+  const [croppedBlob, setCroppedBlob] = useState<Blob | null>(null);
   const [dateWorn, setDateWorn] = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
   const [isUploading, setIsUploading] = useState(false);
 
-  const [isPasteMode, setIsPasteMode] = useState(false);
-  const [pastedBlob, setPastedBlob] = useState<Blob | null>(null);
+  const [isRemoveBgStep, setIsRemoveBgStep] = useState(false);
+  const [isRemovingBg, setIsRemovingBg] = useState(false);
+  const [cutoutBlob, setCutoutBlob] = useState<Blob | null>(null);
+  const [isBgPickerMode, setIsBgPickerMode] = useState(false);
   const [selectedBg, setSelectedBg] = useState(0);
   const [compositeBlob, setCompositeBlob] = useState<Blob | null>(null);
   const [isCompositing, setIsCompositing] = useState(false);
 
-  const processPastedBlob = useCallback(async (blob: Blob) => {
-    const transparent = await hasTransparency(blob);
-    if (transparent) {
-      setPastedBlob(blob);
-      setSelectedBg(0);
-      setIsPasteMode(true);
-      setCompositeBlob(null);
-      setImagePreview(null);
-    } else {
-      const url = URL.createObjectURL(blob);
-      const file = new File([blob], "paste.jpg", { type: blob.type });
-      setSelectedImage(file);
-      setImagePreview(url);
-      setIsCropping(true);
-      setCroppedPreview(null);
-      setCompositeBlob(null);
-      setIsPasteMode(false);
-    }
-  }, []);
-
-  // Desktop Ctrl+V / Cmd+V — fires when paste zone is not focused
+  // Redraw preview canvas whenever selected background changes in bg picker mode
   useEffect(() => {
-    const handler = (e: ClipboardEvent) => {
-      if (document.activeElement === pasteZoneRef.current) return;
-      const items = Array.from(e.clipboardData?.items ?? []);
-      const imgItem = items.find((i) => i.type.startsWith("image/"));
-      if (!imgItem) return;
-      e.preventDefault();
-      const blob = imgItem.getAsFile();
-      if (blob) processPastedBlob(blob);
-    };
-    window.addEventListener("paste", handler);
-    return () => window.removeEventListener("paste", handler);
-  }, [processPastedBlob]);
-
-  // Redraw preview canvas when background changes
-  useEffect(() => {
-    if (!isPasteMode || !pastedBlob || !previewCanvasRef.current) return;
+    if (!isBgPickerMode || !cutoutBlob || !previewCanvasRef.current) return;
     const canvas = previewCanvasRef.current;
     const ctx = canvas.getContext("2d")!;
     drawBackground(ctx, BACKGROUNDS[selectedBg], canvas.width, canvas.height);
-    const url = URL.createObjectURL(pastedBlob);
+    const url = URL.createObjectURL(cutoutBlob);
     const img = new Image();
-    img.onload = () => { drawCutoutCentered(ctx, img, canvas.width, canvas.height); URL.revokeObjectURL(url); };
+    img.onload = () => {
+      drawCutoutCentered(ctx, img, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+    };
     img.src = url;
-  }, [isPasteMode, pastedBlob, selectedBg]);
-
-  const handleComposite = async () => {
-    if (!pastedBlob) return;
-    setIsCompositing(true);
-    try {
-      const blob = await compositeOnBackground(pastedBlob, selectedBg);
-      setCompositeBlob(blob);
-      setImagePreview(URL.createObjectURL(blob));
-      setIsPasteMode(false);
-      setPastedBlob(null);
-    } catch {
-      toast({ title: "Failed to compose image", variant: "destructive" });
-    } finally {
-      setIsCompositing(false);
-    }
-  };
+  }, [isBgPickerMode, cutoutBlob, selectedBg]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -126,7 +80,11 @@ export default function AddOutfit() {
     }
     setSelectedImage(file);
     setCroppedPreview(null);
+    setCroppedBlob(null);
     setCompositeBlob(null);
+    setIsRemoveBgStep(false);
+    setIsBgPickerMode(false);
+    setCutoutBlob(null);
     setIsCropping(true);
     const reader = new FileReader();
     reader.onload = (e) => setImagePreview(e.target?.result as string);
@@ -152,11 +110,60 @@ export default function AddOutfit() {
     if (!imgRef.current || !crop) return;
     try {
       const blob = await getCroppedBlob(imgRef.current, crop);
+      setCroppedBlob(blob);
       setCroppedPreview(URL.createObjectURL(blob));
       setIsCropping(false);
+      setIsRemoveBgStep(true);
     } catch {
       toast({ title: "Crop failed", variant: "destructive" });
       setIsCropping(false);
+    }
+  };
+
+  const handleSkipCrop = () => {
+    setIsCropping(false);
+    setIsRemoveBgStep(true);
+  };
+
+  const handleRemoveBg = async () => {
+    const source = croppedBlob || selectedImage;
+    if (!source) return;
+    setIsRemovingBg(true);
+    try {
+      const cutout = await removeBgFromBlob(source);
+      setCutoutBlob(cutout);
+      setIsRemoveBgStep(false);
+      setIsBgPickerMode(true);
+      setSelectedBg(0);
+      setCompositeBlob(null);
+    } catch {
+      toast({
+        title: "Background removal failed",
+        description: "Try again or skip to upload as-is",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRemovingBg(false);
+    }
+  };
+
+  const handleSkipBgRemoval = () => {
+    setIsRemoveBgStep(false);
+  };
+
+  const handleComposite = async () => {
+    if (!cutoutBlob) return;
+    setIsCompositing(true);
+    try {
+      const blob = await compositeOnBackground(cutoutBlob, selectedBg);
+      setCompositeBlob(blob);
+      setImagePreview(URL.createObjectURL(blob));
+      setIsBgPickerMode(false);
+      setCutoutBlob(null);
+    } catch {
+      toast({ title: "Failed to compose image", variant: "destructive" });
+    } finally {
+      setIsCompositing(false);
     }
   };
 
@@ -164,9 +171,12 @@ export default function AddOutfit() {
     setSelectedImage(null);
     setImagePreview(null);
     setCroppedPreview(null);
+    setCroppedBlob(null);
     setIsCropping(false);
-    setIsPasteMode(false);
-    setPastedBlob(null);
+    setIsRemoveBgStep(false);
+    setIsRemovingBg(false);
+    setCutoutBlob(null);
+    setIsBgPickerMode(false);
     setCompositeBlob(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
@@ -182,10 +192,10 @@ export default function AddOutfit() {
       let uploadBlob: Blob;
       if (compositeBlob) {
         uploadBlob = compositeBlob;
+      } else if (croppedBlob) {
+        uploadBlob = croppedBlob;
       } else if (selectedImage) {
-        uploadBlob = croppedPreview && imgRef.current && crop
-          ? await getCroppedBlob(imgRef.current, crop)
-          : selectedImage;
+        uploadBlob = selectedImage;
       } else {
         throw new Error("No image available");
       }
@@ -219,6 +229,16 @@ export default function AddOutfit() {
 
   const hasReadyImage = !!(selectedImage || compositeBlob);
 
+  const handleBack = () => {
+    if (isBgPickerMode) {
+      setIsBgPickerMode(false);
+      setCutoutBlob(null);
+      setIsRemoveBgStep(true);
+    } else {
+      navigate("/");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
@@ -226,7 +246,7 @@ export default function AddOutfit() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => isPasteMode ? clearImage() : navigate("/")}
+            onClick={handleBack}
             data-testid="button-back"
           >
             <ArrowLeft className="h-5 w-5" />
@@ -238,7 +258,8 @@ export default function AddOutfit() {
       <main className="p-4 space-y-4">
         <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} data-testid="input-file" />
 
-        {isPasteMode && pastedBlob ? (
+        {isBgPickerMode && cutoutBlob ? (
+          // Step 4: Background picker
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-medium text-foreground">Pick a background</p>
@@ -277,10 +298,57 @@ export default function AddOutfit() {
             </div>
 
             <Button className="w-full gap-2" size="lg" onClick={handleComposite} disabled={isCompositing} data-testid="button-use-background">
-              {isCompositing ? <><Loader2 className="h-5 w-5 animate-spin" /> Compositing...</> : <><Upload className="h-5 w-5" /> Use this background</>}
+              {isCompositing
+                ? <><Loader2 className="h-5 w-5 animate-spin" /> Compositing...</>
+                : <><Upload className="h-5 w-5" /> Use this background</>}
             </Button>
           </div>
+
+        ) : isRemoveBgStep ? (
+          // Step 3: Remove background choice
+          <div className="space-y-4">
+            <Card className="overflow-hidden">
+              <div className="aspect-[3/4] bg-muted">
+                <img
+                  src={croppedPreview || imagePreview || ""}
+                  alt="Your photo"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            </Card>
+
+            <div className="space-y-2">
+              <Button
+                className="w-full gap-2"
+                size="lg"
+                onClick={handleRemoveBg}
+                disabled={isRemovingBg}
+                data-testid="button-remove-bg"
+              >
+                {isRemovingBg
+                  ? <><Loader2 className="h-5 w-5 animate-spin" /> Removing background...</>
+                  : <><Wand2 className="h-5 w-5" /> Remove Background</>}
+              </Button>
+              {isRemovingBg && (
+                <p className="text-xs text-center text-muted-foreground">
+                  First time may take a moment while the model loads
+                </p>
+              )}
+              <Button
+                variant="ghost"
+                className="w-full"
+                size="lg"
+                onClick={handleSkipBgRemoval}
+                disabled={isRemovingBg}
+                data-testid="button-skip-bg-removal"
+              >
+                Skip — upload as-is
+              </Button>
+            </div>
+          </div>
+
         ) : !imagePreview ? (
+          // Step 1: Pick image
           <Card className="p-6">
             <div className="flex flex-col items-center justify-center py-6 space-y-4">
               <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
@@ -288,7 +356,7 @@ export default function AddOutfit() {
               </div>
               <div className="text-center">
                 <h3 className="font-semibold text-foreground text-sm">Capture Your Outfit</h3>
-                <p className="text-xs text-muted-foreground mt-1">Take a photo, upload from gallery, or paste a cutout</p>
+                <p className="text-xs text-muted-foreground mt-1">Take a photo or upload from your gallery</p>
               </div>
               <div className="flex gap-2 w-full max-w-xs justify-center">
                 <Button
@@ -308,43 +376,18 @@ export default function AddOutfit() {
                   <ImageIcon className="h-4 w-4" /> Gallery
                 </Button>
               </div>
-              <div className="flex flex-col items-center gap-1.5 w-full">
-                <div className="flex items-center gap-2 w-full max-w-xs">
-                  <div className="flex-1 h-px bg-border" />
-                  <span className="text-xs text-muted-foreground">or paste a cutout</span>
-                  <div className="flex-1 h-px bg-border" />
-                </div>
-                <div
-                  ref={pasteZoneRef}
-                  contentEditable
-                  suppressContentEditableWarning
-                  inputMode="none"
-                  onPaste={(e) => {
-                    const items = Array.from(e.clipboardData?.items ?? []);
-                    const img = items.find((i) => i.type === "image/png") ?? items.find((i) => i.type.startsWith("image/"));
-                    if (!img) return;
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const blob = img.getAsFile();
-                    if (blob) processPastedBlob(blob);
-                  }}
-                  className="rounded-lg border border-input bg-muted/40 px-8 py-3 text-sm font-medium focus:border-ring focus:outline-none select-none"
-                  data-testid="paste-zone"
-                >
-                  Paste
-                </div>
-                <p className="text-xs text-muted-foreground">Tap and hold, then choose Paste</p>
-              </div>
             </div>
           </Card>
+
         ) : isCropping ? (
+          // Step 2: Crop
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium flex items-center gap-2">
                 <Crop className="h-4 w-4" /> Crop your photo
               </span>
               <div className="flex gap-2">
-                <Button variant="ghost" size="sm" onClick={() => setIsCropping(false)} data-testid="button-skip-crop">Skip</Button>
+                <Button variant="ghost" size="sm" onClick={handleSkipCrop} data-testid="button-skip-crop">Skip</Button>
                 <Button size="sm" onClick={handleCropDone} data-testid="button-apply-crop">Apply</Button>
               </div>
             </div>
@@ -352,7 +395,9 @@ export default function AddOutfit() {
               <img ref={imgRef} src={imagePreview} alt="Crop preview" onLoad={onImageLoad} className="max-h-[60vh] mx-auto" />
             </ReactCrop>
           </div>
+
         ) : (
+          // Step 5: Preview + submit
           <div className="relative">
             <Card className="overflow-hidden">
               <div className="aspect-[3/4] bg-muted relative">
@@ -375,7 +420,7 @@ export default function AddOutfit() {
           </div>
         )}
 
-        {!isPasteMode && (
+        {!isBgPickerMode && !isRemoveBgStep && (
           <>
             <div className="space-y-3">
               <div className="space-y-1.5">

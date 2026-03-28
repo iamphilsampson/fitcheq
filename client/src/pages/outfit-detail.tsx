@@ -1,7 +1,7 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useRoute, useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Tag, X, MoreVertical, Trash2, Camera, Image as ImageIcon, Upload } from "lucide-react";
+import { ArrowLeft, Loader2, Tag, X, MoreVertical, Trash2, Camera, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -23,7 +23,6 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Outfit, Item } from "@shared/schema";
-import { BACKGROUNDS, drawBackground, drawCutoutCentered, hasTransparency, compositeOnBackground } from "@/lib/imageUtils";
 
 interface OutfitWithItems extends Outfit {
   items: Item[];
@@ -34,16 +33,10 @@ export default function OutfitDetail() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
-  const pasteZoneRef = useRef<HTMLDivElement>(null);
 
   const [isReuploading, setIsReuploading] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showPhotoOptions, setShowPhotoOptions] = useState(false);
-  const [isPasteMode, setIsPasteMode] = useState(false);
-  const [pastedBlob, setPastedBlob] = useState<Blob | null>(null);
-  const [selectedBg, setSelectedBg] = useState(0);
-  const [isCompositing, setIsCompositing] = useState(false);
 
   const outfitId = params?.id ? parseInt(params.id) : null;
 
@@ -94,8 +87,6 @@ export default function OutfitDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/outfits", outfitId] });
       queryClient.invalidateQueries({ queryKey: ["/api/outfits"] });
       toast({ title: "Photo updated", description: "Outfit photo has been replaced." });
-      setIsPasteMode(false);
-      setPastedBlob(null);
       setShowPhotoOptions(false);
     } catch (error) {
       toast({ title: "Upload failed", description: error instanceof Error ? error.message : "Something went wrong", variant: "destructive" });
@@ -104,58 +95,6 @@ export default function OutfitDetail() {
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }, [outfitId]);
-
-  const processPastedBlob = useCallback(async (blob: Blob) => {
-    setShowPhotoOptions(false);
-    const transparent = await hasTransparency(blob);
-    if (transparent) {
-      setPastedBlob(blob);
-      setSelectedBg(0);
-      setIsPasteMode(true);
-    } else {
-      await uploadBlobAndPatch(blob);
-    }
-  }, [uploadBlobAndPatch]);
-
-  // Desktop Ctrl+V / Cmd+V — fires when paste zone is not focused
-  useEffect(() => {
-    const handler = (e: ClipboardEvent) => {
-      if (document.activeElement === pasteZoneRef.current) return;
-      const items = Array.from(e.clipboardData?.items ?? []);
-      const imgItem = items.find((i) => i.type.startsWith("image/"));
-      if (!imgItem) return;
-      e.preventDefault();
-      const blob = imgItem.getAsFile();
-      if (blob) processPastedBlob(blob);
-    };
-    window.addEventListener("paste", handler);
-    return () => window.removeEventListener("paste", handler);
-  }, [processPastedBlob]);
-
-  // Redraw preview canvas on background change
-  useEffect(() => {
-    if (!isPasteMode || !pastedBlob || !previewCanvasRef.current) return;
-    const canvas = previewCanvasRef.current;
-    const ctx = canvas.getContext("2d")!;
-    drawBackground(ctx, BACKGROUNDS[selectedBg], canvas.width, canvas.height);
-    const url = URL.createObjectURL(pastedBlob);
-    const img = new Image();
-    img.onload = () => { drawCutoutCentered(ctx, img, canvas.width, canvas.height); URL.revokeObjectURL(url); };
-    img.src = url;
-  }, [isPasteMode, pastedBlob, selectedBg]);
-
-  const handleComposite = async () => {
-    if (!pastedBlob) return;
-    setIsCompositing(true);
-    try {
-      const blob = await compositeOnBackground(pastedBlob, selectedBg);
-      await uploadBlobAndPatch(blob);
-    } catch {
-      toast({ title: "Failed to compose image", variant: "destructive" });
-    } finally {
-      setIsCompositing(false);
-    }
-  };
 
   const handleReupload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -166,8 +105,6 @@ export default function OutfitDetail() {
 
   const cancelPhotoEdit = () => {
     setShowPhotoOptions(false);
-    setIsPasteMode(false);
-    setPastedBlob(null);
   };
 
   if (isLoading) {
@@ -203,7 +140,7 @@ export default function OutfitDetail() {
     day: "numeric", month: "short", year: "numeric",
   });
 
-  const isEditingPhoto = showPhotoOptions || isPasteMode;
+  const isEditingPhoto = showPhotoOptions;
 
   return (
     <div className="min-h-screen bg-background">
@@ -270,85 +207,8 @@ export default function OutfitDetail() {
             >
               <ImageIcon className="h-5 w-5 text-muted-foreground" /> Choose from gallery
             </Button>
-            <div className="flex flex-col items-center gap-1.5 pt-1">
-              <div className="flex items-center gap-2 w-full">
-                <div className="flex-1 h-px bg-border" />
-                <span className="text-xs text-muted-foreground">or paste a cutout</span>
-                <div className="flex-1 h-px bg-border" />
-              </div>
-              <div
-                ref={pasteZoneRef}
-                contentEditable
-                suppressContentEditableWarning
-                inputMode="none"
-                onPaste={(e) => {
-                  const items = Array.from(e.clipboardData?.items ?? []);
-                  const img = items.find((i) => i.type === "image/png") ?? items.find((i) => i.type.startsWith("image/"));
-                  if (!img) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const blob = img.getAsFile();
-                  if (blob) processPastedBlob(blob);
-                }}
-                className="rounded-lg border border-input bg-muted/40 px-8 py-3 text-sm font-medium focus:border-ring focus:outline-none select-none"
-                data-testid="paste-zone"
-              >
-                Paste
-              </div>
-              <p className="text-xs text-muted-foreground">Tap and hold, then choose Paste</p>
-            </div>
             <Button variant="ghost" className="w-full mt-2" onClick={cancelPhotoEdit} data-testid="button-cancel-photo">
               Cancel
-            </Button>
-          </div>
-        ) : isPasteMode && pastedBlob ? (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-medium text-foreground">Pick a background</p>
-              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={cancelPhotoEdit} data-testid="button-cancel-bg">
-                Cancel
-              </Button>
-            </div>
-
-            <div className="rounded-xl overflow-hidden bg-muted">
-              <canvas
-                ref={previewCanvasRef}
-                width={300}
-                height={400}
-                className="w-full"
-                style={{ aspectRatio: "3/4", display: "block" }}
-                data-testid="canvas-preview"
-              />
-            </div>
-
-            <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1">
-              {BACKGROUNDS.map((bg, i) => (
-                <button
-                  key={bg.name}
-                  onClick={() => setSelectedBg(i)}
-                  className={`flex-shrink-0 flex flex-col items-center gap-1.5 transition-opacity ${selectedBg === i ? "opacity-100" : "opacity-55 hover:opacity-80"}`}
-                  data-testid={`button-bg-${i}`}
-                  title={bg.name}
-                >
-                  <span
-                    className={`block w-12 h-12 rounded-full border-2 transition-all ${selectedBg === i ? "border-foreground scale-110 shadow-md" : "border-transparent"}`}
-                    style={{ background: bg.css }}
-                  />
-                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">{bg.name}</span>
-                </button>
-              ))}
-            </div>
-
-            <Button
-              className="w-full gap-2"
-              size="lg"
-              onClick={handleComposite}
-              disabled={isCompositing || isReuploading}
-              data-testid="button-use-background"
-            >
-              {isCompositing || isReuploading
-                ? <><Loader2 className="h-5 w-5 animate-spin" /> {isCompositing ? "Compositing..." : "Saving..."}</>
-                : <><Upload className="h-5 w-5" /> Use this background</>}
             </Button>
           </div>
         ) : (

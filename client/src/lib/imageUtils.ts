@@ -93,28 +93,9 @@ export function drawCutoutCentered(
   ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
 }
 
-export function hasTransparency(blob: Blob): Promise<boolean> {
-  if (!blob.type.includes("png")) return Promise.resolve(false);
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      const size = 200;
-      const canvas = document.createElement("canvas");
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(img, 0, 0, size, size);
-      const data = ctx.getImageData(0, 0, size, size).data;
-      URL.revokeObjectURL(url);
-      for (let i = 3; i < data.length; i += 4) {
-        if (data[i] < 250) { resolve(true); return; }
-      }
-      resolve(false);
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); resolve(false); };
-    img.src = url;
-  });
+export async function removeBgFromBlob(blob: Blob): Promise<Blob> {
+  const { removeBackground } = await import("@imgly/background-removal");
+  return removeBackground(blob);
 }
 
 export function compositeOnBackground(

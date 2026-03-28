@@ -9,7 +9,6 @@ import AddOutfit from "@/pages/add-outfit";
 import Reconcile from "@/pages/reconcile";
 import ItemDetail from "@/pages/item-detail";
 import OutfitDetail from "@/pages/outfit-detail";
-import PasteTest from "@/pages/paste-test";
 import Activity from "@/pages/activity";
 
 function Router() {
@@ -20,7 +19,6 @@ function Router() {
       <Route path="/reconcile/:outfitId" component={Reconcile} />
       <Route path="/items/:id" component={ItemDetail} />
       <Route path="/outfits/:id" component={OutfitDetail} />
-      <Route path="/paste-test" component={PasteTest} />
       <Route path="/activity" component={Activity} />
       <Route component={NotFound} />
     </Switch>
