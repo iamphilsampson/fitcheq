@@ -126,6 +126,13 @@ export default function AddOutfit() {
   };
 
   const handleRemoveBg = async () => {
+    // If we already computed a cutout (e.g. user went back from picker), reuse it
+    if (cutoutBlob) {
+      setIsRemoveBgStep(false);
+      setIsBgPickerMode(true);
+      setSelectedBg(0);
+      return;
+    }
     const source = croppedBlob || selectedImage;
     if (!source) return;
     setIsRemovingBg(true);
@@ -231,8 +238,8 @@ export default function AddOutfit() {
 
   const handleBack = () => {
     if (isBgPickerMode) {
+      // Keep cutoutBlob so re-entering bg picker skips the ML model run
       setIsBgPickerMode(false);
-      setCutoutBlob(null);
       setIsRemoveBgStep(true);
     } else {
       navigate("/");
