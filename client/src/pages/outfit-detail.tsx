@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { useRoute, useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Tag, X, MoreVertical, Trash2, Camera, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, Loader2, Tag, X, MoreVertical, Trash2, Camera, Image as ImageIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -28,6 +28,13 @@ interface OutfitWithItems extends Outfit {
   items: Item[];
 }
 
+interface OutfitSummary {
+  id: number;
+  dateWorn: string;
+  fullImageUrl: string;
+  itemCount: number;
+}
+
 export default function OutfitDetail() {
   const [, params] = useRoute("/outfits/:id");
   const [, navigate] = useLocation();
@@ -38,6 +45,10 @@ export default function OutfitDetail() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showPhotoOptions, setShowPhotoOptions] = useState(false);
 
+  // Touch swipe state
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+
   const outfitId = params?.id ? parseInt(params.id) : null;
 
   const { data: outfit, isLoading } = useQuery<OutfitWithItems>({
@@ -45,12 +56,45 @@ export default function OutfitDetail() {
     enabled: !!outfitId,
   });
 
+  // Fetch the full sorted outfits list to determine prev/next neighbours
+  const { data: allOutfits } = useQuery<OutfitSummary[]>({
+    queryKey: ["/api/outfits"],
+  });
+
+  const currentIndex = allOutfits?.findIndex((o) => o.id === outfitId) ?? -1;
+  const prevId = currentIndex > 0 ? allOutfits![currentIndex - 1].id : null;
+  const nextId = allOutfits && currentIndex < allOutfits.length - 1 ? allOutfits[currentIndex + 1].id : null;
+  const totalCount = allOutfits?.length ?? 0;
+  const positionLabel = currentIndex >= 0 && totalCount > 1 ? `${currentIndex + 1} / ${totalCount}` : null;
+
+  const goToOutfit = useCallback((id: number) => {
+    navigate(`/outfits/${id}`);
+  }, [navigate]);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+    // Only trigger if clearly horizontal (dx dominant, threshold 60px)
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx < 0 && nextId) goToOutfit(nextId);   // swipe left → older
+      if (dx > 0 && prevId) goToOutfit(prevId);   // swipe right → newer
+    }
+  };
+
   const deleteMutation = useMutation({
     mutationFn: async () => { await apiRequest("DELETE", `/api/outfits/${outfitId}`); },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/outfits"] });
       toast({ title: "Outfit deleted", description: "The outfit has been removed." });
-      navigate("/");
+      // Navigate to adjacent outfit if available, otherwise home
+      if (prevId) navigate(`/outfits/${prevId}`);
+      else if (nextId) navigate(`/outfits/${nextId}`);
+      else navigate("/");
     },
     onError: (error) => {
       toast({ title: "Failed to delete", description: error instanceof Error ? error.message : "Something went wrong", variant: "destructive" });
@@ -213,17 +257,63 @@ export default function OutfitDetail() {
           </div>
         ) : (
           <>
-            <div className="rounded-lg overflow-hidden bg-muted">
+            {/* Photo with swipe navigation */}
+            <div
+              className="relative rounded-lg overflow-hidden bg-muted select-none"
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              data-testid="photo-swipe-area"
+            >
               <div className="aspect-[3/4]">
                 {isReuploading ? (
                   <div className="w-full h-full flex items-center justify-center">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   </div>
                 ) : (
-                  <img src={outfit.fullImageUrl} alt={`Outfit from ${outfit.dateWorn}`} className="w-full h-full object-cover" />
+                  <img
+                    src={outfit.fullImageUrl}
+                    alt={`Outfit from ${outfit.dateWorn}`}
+                    className="w-full h-full object-cover"
+                    data-testid="outfit-photo"
+                  />
                 )}
               </div>
+
+              {/* Left edge tap — navigate to newer outfit */}
+              {prevId && (
+                <button
+                  className="absolute left-0 top-0 h-full w-14 flex items-center justify-start pl-1 opacity-0 active:opacity-100 focus:opacity-100"
+                  onClick={() => goToOutfit(prevId)}
+                  aria-label="Previous outfit"
+                  data-testid="button-prev-outfit"
+                >
+                  <span className="bg-black/40 rounded-full p-1.5 backdrop-blur-sm">
+                    <ChevronLeft className="h-5 w-5 text-white" />
+                  </span>
+                </button>
+              )}
+
+              {/* Right edge tap — navigate to older outfit */}
+              {nextId && (
+                <button
+                  className="absolute right-0 top-0 h-full w-14 flex items-center justify-end pr-1 opacity-0 active:opacity-100 focus:opacity-100"
+                  onClick={() => goToOutfit(nextId)}
+                  aria-label="Next outfit"
+                  data-testid="button-next-outfit"
+                >
+                  <span className="bg-black/40 rounded-full p-1.5 backdrop-blur-sm">
+                    <ChevronRight className="h-5 w-5 text-white" />
+                  </span>
+                </button>
+              )}
             </div>
+
+            {/* Position indicator */}
+            {positionLabel && (
+              <p className="text-xs text-muted-foreground text-center -mt-2" data-testid="text-position">
+                {positionLabel}
+              </p>
+            )}
 
             {outfit.notes && <p className="text-sm text-muted-foreground">{outfit.notes}</p>}
 
