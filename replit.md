@@ -24,9 +24,12 @@ Preferred communication style: Simple, everyday language.
 The frontend follows a page-based structure with components organized by feature. The app is designed as a mobile-first PWA-style interface with a max-width constraint for optimal mobile viewing.
 
 ### Authentication
-- **Provider**: Replit Auth (OIDC) at `/api/login` and `/api/logout`
-- **Session**: PostgreSQL-backed sessions via `connect-pg-simple`, stored in `sessions` table
-- **User data**: Stored in `users` table (id, email, firstName, lastName, profileImageUrl)
+- **Provider**: Direct Google OAuth (OIDC) via `https://accounts.google.com` — no Replit account required
+- **Credentials**: `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` environment secrets
+- **Routes**: `/api/login` (redirects to Google), `/api/callback` (OAuth callback), `/api/logout` (clears session, redirects to `/`)
+- **Session**: PostgreSQL-backed sessions via `connect-pg-simple`, stored in `sessions` table; 1-year TTL
+- **Token refresh**: `access_type=offline` + `prompt: "consent"` on login ensures Google issues a refresh token; `isAuthenticated` middleware silently refreshes expired access tokens
+- **User data**: Stored in `users` table (id, email, firstName, lastName, profileImageUrl); claims mapped from Google's `given_name`, `family_name`, `picture`
 - **Guard**: `isAuthenticated` middleware protects all API routes
 - **First sign-in**: Automatically claims all orphaned records (null userId) via `/api/auth/claim-orphans`
 - **Guest draft**: Outfit drafts (date/notes) saved to localStorage `fitcheck-outfit-draft`; restored after sign-in
