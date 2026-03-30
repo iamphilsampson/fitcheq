@@ -1,5 +1,6 @@
 import * as client from "openid-client";
-import { Strategy, type VerifyFunction } from "openid-client/passport";
+import { Strategy, type VerifyFunction, type AuthenticateOptions } from "openid-client/passport";
+import type { Request } from "express";
 
 import passport from "passport";
 import session from "express-session";
@@ -19,8 +20,9 @@ export function registerOrphanClaimFn(fn: (userId: string) => Promise<void>) {
 const getOidcConfig = memoize(
   async () => {
     return await client.discovery(
-      new URL(process.env.ISSUER_URL ?? "https://replit.com/oidc"),
-      process.env.REPL_ID!
+      new URL("https://accounts.google.com"),
+      process.env.GOOGLE_CLIENT_ID!,
+      process.env.GOOGLE_CLIENT_SECRET!
     );
   },
   { maxAge: 3600 * 1000 }
@@ -62,10 +64,29 @@ async function upsertUser(claims: Express.User["claims"]) {
   await authStorage.upsertUser({
     id: claims["sub"],
     email: claims["email"] as string | undefined,
-    firstName: claims["first_name"] as string | undefined,
-    lastName: claims["last_name"] as string | undefined,
-    profileImageUrl: claims["profile_image_url"] as string | undefined,
+    firstName: claims["given_name"] as string | undefined,
+    lastName: claims["family_name"] as string | undefined,
+    profileImageUrl: claims["picture"] as string | undefined,
   });
+}
+
+// Extend the Strategy to inject Google-specific access_type=offline so that
+// a refresh_token is issued, enabling sessions to stay alive for the full
+// configured 1-year TTL beyond the ~1h ID token expiry.
+class GoogleStrategy extends Strategy {
+  authorizationRequestParams<TOptions extends AuthenticateOptions>(
+    req: Request,
+    options: TOptions
+  ): URLSearchParams | Record<string, string> | undefined {
+    const base = super.authorizationRequestParams(req, options);
+    // Normalise to URLSearchParams so we can safely append access_type
+    const params =
+      base instanceof URLSearchParams
+        ? base
+        : new URLSearchParams(base as Record<string, string> | undefined);
+    params.set("access_type", "offline");
+    return params;
+  }
 }
 
 export async function setupAuth(app: Express) {
@@ -100,13 +121,13 @@ export async function setupAuth(app: Express) {
 
   // Helper function to ensure strategy exists for a domain
   const ensureStrategy = (domain: string) => {
-    const strategyName = `replitauth:${domain}`;
+    const strategyName = `googleauth:${domain}`;
     if (!registeredStrategies.has(strategyName)) {
-      const strategy = new Strategy(
+      const strategy = new GoogleStrategy(
         {
           name: strategyName,
           config,
-          scope: "openid email profile offline_access",
+          scope: "openid email profile",
           callbackURL: `https://${domain}/api/callback`,
         },
         verify
@@ -121,15 +142,15 @@ export async function setupAuth(app: Express) {
 
   app.get("/api/login", (req, res, next) => {
     ensureStrategy(req.hostname);
-    passport.authenticate(`replitauth:${req.hostname}`, {
-      prompt: "login",
-      scope: ["openid", "email", "profile", "offline_access"],
+    passport.authenticate(`googleauth:${req.hostname}`, {
+      prompt: "consent",
+      scope: ["openid", "email", "profile"],
     })(req, res, next);
   });
 
   app.get("/api/callback", (req, res, next) => {
     ensureStrategy(req.hostname);
-    passport.authenticate(`replitauth:${req.hostname}`, {
+    passport.authenticate(`googleauth:${req.hostname}`, {
       successReturnToOrRedirect: "/",
       failureRedirect: "/api/login",
     })(req, res, next);
@@ -137,12 +158,7 @@ export async function setupAuth(app: Express) {
 
   app.get("/api/logout", (req, res) => {
     req.logout(() => {
-      res.redirect(
-        client.buildEndSessionUrl(config, {
-          client_id: process.env.REPL_ID!,
-          post_logout_redirect_uri: `${req.protocol}://${req.hostname}`,
-        }).href
-      );
+      res.redirect("/");
     });
   });
 }

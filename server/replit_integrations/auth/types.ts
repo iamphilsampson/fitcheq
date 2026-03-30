@@ -1,12 +1,12 @@
 /**
- * Typed session user claims stored by Replit Auth passport strategy.
+ * Typed session user claims stored by Google OAuth passport strategy.
  */
 export interface ReplitUserClaims {
   sub: string;
   email?: string;
-  first_name?: string;
-  last_name?: string;
-  profile_image_url?: string;
+  given_name?: string;
+  family_name?: string;
+  picture?: string;
   exp?: number;
   [key: string]: unknown;
 }
