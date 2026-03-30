@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Camera, Upload, ArrowLeft, Loader2, X, Image as ImageIcon, Crop, Wand2 } from "lucide-react";
+import { Camera, Upload, ArrowLeft, Loader2, X, Image as ImageIcon, Crop, Wand2, LogIn } from "lucide-react";
 import exifr from "exifr";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -11,6 +11,40 @@ import { useToast } from "@/hooks/use-toast";
 import ReactCrop, { type Crop as CropType, centerCrop, makeAspectCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
 import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground } from "@/lib/imageUtils";
+import { useAuth } from "@/hooks/use-auth";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+
+const DRAFT_STORAGE_KEY = "fitcheck-outfit-draft";
+
+interface OutfitDraft {
+  dateWorn: string;
+  notes: string;
+  imageDataUrl?: string; // base64 data URL of the preview image
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+function dataUrlToBlob(dataUrl: string): Blob {
+  const [header, data] = dataUrl.split(",");
+  const mimeType = header.match(/:(.*?);/)?.[1] || "image/jpeg";
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mimeType });
+}
 
 function getCroppedBlob(image: HTMLImageElement, crop: CropType): Promise<Blob> {
   const canvas = document.createElement("canvas");
@@ -34,6 +68,7 @@ function getCroppedBlob(image: HTMLImageElement, crop: CropType): Promise<Blob> 
 export default function AddOutfit() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -47,6 +82,7 @@ export default function AddOutfit() {
   const [dateWorn, setDateWorn] = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [showSignInPrompt, setShowSignInPrompt] = useState(false);
 
   const [isRemoveBgStep, setIsRemoveBgStep] = useState(false);
   const [isRemovingBg, setIsRemovingBg] = useState(false);
@@ -55,6 +91,28 @@ export default function AddOutfit() {
   const [selectedBg, setSelectedBg] = useState(0);
   const [compositeBlob, setCompositeBlob] = useState<Blob | null>(null);
   const [isCompositing, setIsCompositing] = useState(false);
+
+  // Restore draft from localStorage if available (after sign-in redirect)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const savedDraft = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!savedDraft) return;
+    try {
+      const draft: OutfitDraft = JSON.parse(savedDraft);
+      if (draft.dateWorn) setDateWorn(draft.dateWorn);
+      if (draft.notes) setNotes(draft.notes);
+      // Restore image from data URL if available
+      if (draft.imageDataUrl) {
+        setImagePreview(draft.imageDataUrl);
+        setCroppedPreview(draft.imageDataUrl);
+        // Convert data URL back to a blob so it can be uploaded
+        const blob = dataUrlToBlob(draft.imageDataUrl);
+        setCroppedBlob(blob);
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }, [isAuthenticated]);
 
   // Redraw preview canvas whenever selected background changes in bg picker mode
   useEffect(() => {
@@ -194,6 +252,26 @@ export default function AddOutfit() {
       toast({ title: "No image selected", description: "Please select or capture an outfit photo", variant: "destructive" });
       return;
     }
+
+    // If user is not authenticated, show sign-in prompt and save draft to localStorage
+    if (!isAuthenticated) {
+      const draft: OutfitDraft = { dateWorn, notes };
+      // Try to save image as base64 data URL so we can restore after sign-in
+      try {
+        const blobToSave = compositeBlob || croppedBlob || (selectedImage || null);
+        if (blobToSave) {
+          draft.imageDataUrl = await blobToDataUrl(blobToSave);
+        } else if (croppedPreview && croppedPreview.startsWith("data:")) {
+          draft.imageDataUrl = croppedPreview;
+        }
+      } catch {
+        // If we can't serialize the image, just save date/notes
+      }
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+      setShowSignInPrompt(true);
+      return;
+    }
+
     setIsUploading(true);
     try {
       let uploadBlob: Blob;
@@ -226,6 +304,8 @@ export default function AddOutfit() {
       if (!outfitRes.ok) throw new Error("Failed to create outfit");
 
       const outfit = await outfitRes.json();
+      // Clear any guest draft after successful save
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
       navigate(`/reconcile/${outfit.id}`);
     } catch (error) {
       toast({ title: "Upload failed", description: error instanceof Error ? error.message : "Something went wrong", variant: "destructive" });
@@ -248,6 +328,36 @@ export default function AddOutfit() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Sign-in prompt modal for guests */}
+      <Dialog open={showSignInPrompt} onOpenChange={setShowSignInPrompt}>
+        <DialogContent data-testid="dialog-sign-in-prompt">
+          <DialogHeader>
+            <DialogTitle>Sign in to save your outfit</DialogTitle>
+            <DialogDescription>
+              Create a free account to save your outfits permanently. Your outfit details have been preserved — they'll be waiting for you after you sign in.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <Button
+              className="w-full gap-2"
+              onClick={() => { window.location.href = "/api/login"; }}
+              data-testid="button-sign-in-prompt"
+            >
+              <LogIn className="h-4 w-4" />
+              Sign in with Google
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full text-muted-foreground"
+              onClick={() => setShowSignInPrompt(false)}
+              data-testid="button-cancel-sign-in"
+            >
+              Continue without signing in
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
         <div className="px-4 py-2 flex items-center gap-3">
           <Button

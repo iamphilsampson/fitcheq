@@ -4,6 +4,8 @@
 
 Fit Check is a mobile-first digital wardrobe management application that allows users to catalog their clothing items, track outfits they've worn, and manually tag clothing items in outfit photos. The app features a React frontend with a Node.js/Express backend, using PostgreSQL for data persistence and Google Cloud Storage for image uploads. AI-powered clothing detection via GPT-4o Vision is available as a backend endpoint for future use.
 
+Authentication is handled via Replit Auth (OpenID Connect), which supports Google sign-in. All data is scoped to the signed-in user's ID.
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
@@ -21,8 +23,16 @@ Preferred communication style: Simple, everyday language.
 
 The frontend follows a page-based structure with components organized by feature. The app is designed as a mobile-first PWA-style interface with a max-width constraint for optimal mobile viewing.
 
+### Authentication
+- **Provider**: Replit Auth (OIDC) at `/api/login` and `/api/logout`
+- **Session**: PostgreSQL-backed sessions via `connect-pg-simple`, stored in `sessions` table
+- **User data**: Stored in `users` table (id, email, firstName, lastName, profileImageUrl)
+- **Guard**: `isAuthenticated` middleware protects all API routes
+- **First sign-in**: Automatically claims all orphaned records (null userId) via `/api/auth/claim-orphans`
+- **Guest draft**: Outfit drafts (date/notes) saved to localStorage `fitcheck-outfit-draft`; restored after sign-in
+
 ### Pages
-- **Home** (`/`): Outfits tab (default, first) with card/feed view toggle + Wardrobe tab. Compact centered "fitcheck" header with settings gear left. Supports `?tab=wardrobe` query param to restore tab state. Each outfit card shows date and tagged item count. Wardrobe tab has always-visible + button per category for bulk item adding.
+- **Home** (`/`): Shows landing page if not authenticated. Outfits tab (default, first) with card/feed view toggle + Wardrobe tab. Compact centered "fitcheck" header with settings gear left, user avatar/sign-out on right. Supports `?tab=wardrobe` query param to restore tab state. Each outfit card shows date and tagged item count. Wardrobe tab has always-visible + button per category for bulk item adding. Draft restore banner appears after sign-in if localStorage draft exists.
 - **Add Outfit** (`/add-outfit`): Photo capture/upload with cropping, then an optional background removal step powered by `@imgly/background-removal` (client-side ML via WASM). After crop, user sees "Remove Background" (runs ML model, then shows 6 editorial gradient swatches for background picker) or "Skip" (upload as-is). Background picker uses Canvas at 900×1200px with live 3:4 preview. Backgrounds: Chalk, Sand Drift, Lilac Mist, Peach Haze, Slate Deep, Sage Blur. No clipboard/paste path.
 - **Tag Items** (`/reconcile/:outfitId`): Slot-based manual item tagging with search/autocomplete input for color/brand that doubles as wardrobe item search. Fullscreen image preview. Horizontal insert dividers between slots. Exit confirmation only when user has made actual changes (compares current state to initially loaded items).
 - **Outfit Detail** (`/outfits/:id`): Borderless outfit photo, DropdownMenu (3-dot) with "Change Photo" and "Delete Outfit" options, tagged items shown as text list with hover-reveal X remove buttons, link to tag items page.
@@ -43,9 +53,12 @@ Key API endpoints:
 
 ### Data Model
 The database schema uses a many-to-many relationship pattern:
-- **Items**: Individual clothing pieces with category, subCategory, brand, size, color, imageUrl, and description
-- **Outfits**: Full outfit photos with dateWorn, fullImageUrl, and notes
+- **Items**: Individual clothing pieces with userId (nullable), category, subCategory, brand, size, color, imageUrl, and description
+- **Outfits**: Full outfit photos with userId (nullable), dateWorn, fullImageUrl, and notes
 - **OutfitItems**: Junction table linking items to outfits
+- **ActivityLog**: Action log with userId (nullable), action, entityType, entityId, description
+- **Users**: Auth users (id, email, firstName, lastName, profileImageUrl, createdAt, updatedAt)
+- **Sessions**: Express session storage (sid, sess, expire)
 
 ### Slot-based Tagging (reconcile.tsx)
 - Pre-built slots: Top, Layer, Bottoms, Shoes, Accessories

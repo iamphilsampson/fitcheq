@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useSearch } from "wouter";
-import { Camera, Shirt, Calendar, LayoutGrid, List, Settings, Plus, X, Loader2, Check, ChevronDown, ChevronRight } from "lucide-react";
+import { Camera, Shirt, Calendar, LayoutGrid, List, Settings, Plus, X, Loader2, Check, ChevronDown, ChevronRight, LogIn, LogOut, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,7 +23,9 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 import type { Item, Outfit } from "@shared/schema";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 
 type OutfitWithCount = Outfit & { itemCount: number };
 
@@ -75,6 +77,19 @@ export default function Home() {
   const [bulkEntries, setBulkEntries] = useState<BulkEntry[]>([]);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const { toast } = useToast();
+  const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
+  const [showDraftBanner, setShowDraftBanner] = useState(false);
+
+  // When user signs in: show draft banner if a guest draft exists
+  // (orphan claim is now handled server-side in the auth callback)
+  useEffect(() => {
+    if (isAuthenticated) {
+      const draft = localStorage.getItem("fitcheck-outfit-draft");
+      if (draft) {
+        setShowDraftBanner(true);
+      }
+    }
+  }, [isAuthenticated]);
 
   const handlePresetChange = (value: "male" | "female") => {
     setPreset(value);
@@ -83,10 +98,12 @@ export default function Home() {
 
   const { data: items, isLoading: itemsLoading } = useQuery<Item[]>({
     queryKey: ["/api/items"],
+    enabled: isAuthenticated && !authLoading,
   });
 
   const { data: outfits, isLoading: outfitsLoading } = useQuery<OutfitWithCount[]>({
     queryKey: ["/api/outfits"],
+    enabled: isAuthenticated && !authLoading,
   });
 
   const groupedItems = items?.reduce(
@@ -180,11 +197,67 @@ export default function Home() {
           <h1 className="text-lg font-bold tracking-tight text-foreground" style={{ fontFamily: "'Inter', sans-serif", letterSpacing: "-0.03em" }}>
             fit<span className="text-primary">check</span>
           </h1>
-          <div className="w-9" />
+          {authLoading ? (
+            <div className="w-9 h-9 flex items-center justify-center">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            </div>
+          ) : isAuthenticated && user ? (
+            <button
+              onClick={() => logout()}
+              data-testid="button-user-menu"
+              className="rounded-full focus:outline-none focus:ring-2 focus:ring-primary"
+              title="Sign out"
+            >
+              <Avatar className="h-8 w-8">
+                {user.profileImageUrl && <AvatarImage src={user.profileImageUrl} alt={user.firstName ?? "User"} />}
+                <AvatarFallback className="text-xs">
+                  {user.firstName?.[0]?.toUpperCase() ?? <User className="h-3 w-3" />}
+                </AvatarFallback>
+              </Avatar>
+            </button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => { window.location.href = "/api/login"; }}
+              data-testid="button-sign-in"
+            >
+              <LogIn className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       </header>
 
       <main className="pb-24">
+        {/* Draft restore banner */}
+        {showDraftBanner && (
+          <div className="mx-4 mt-3 mb-0 p-3 rounded-lg border border-primary/30 bg-primary/5 flex items-center justify-between gap-3" data-testid="banner-draft-restore">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-foreground">You have an unsaved outfit draft</p>
+              <p className="text-xs text-muted-foreground">Continue from where you left off</p>
+            </div>
+            <div className="flex gap-2 flex-shrink-0">
+              <Link href="/add-outfit">
+                <Button size="sm" variant="outline" data-testid="button-restore-draft" onClick={() => {}}>
+                  Continue
+                </Button>
+              </Link>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-muted-foreground"
+                data-testid="button-dismiss-draft"
+                onClick={() => {
+                  localStorage.removeItem("fitcheck-outfit-draft");
+                  setShowDraftBanner(false);
+                }}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+
         <Tabs value={activeTab} onValueChange={setActiveTab} className="px-4 pt-2">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="outfits" data-testid="tab-outfits">

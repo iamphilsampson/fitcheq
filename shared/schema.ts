@@ -6,6 +6,7 @@ import { z } from "zod";
 // Items table - individual clothing pieces
 export const items = pgTable("items", {
   id: serial("id").primaryKey(),
+  userId: text("user_id"),
   category: text("category").notNull(),
   subCategory: text("sub_category"),
   brand: text("brand"),
@@ -19,6 +20,7 @@ export const items = pgTable("items", {
 // Outfits table - full outfit photos with metadata
 export const outfits = pgTable("outfits", {
   id: serial("id").primaryKey(),
+  userId: text("user_id"),
   dateWorn: date("date_worn").notNull(),
   fullImageUrl: text("full_image_url").notNull(),
   notes: text("notes"),
@@ -88,6 +90,7 @@ export type DetectedItem = z.infer<typeof detectedItemSchema>;
 // Activity log table
 export const activityLog = pgTable("activity_log", {
   id: serial("id").primaryKey(),
+  userId: text("user_id"),
   action: text("action").notNull(), // "created" | "deleted"
   entityType: text("entity_type").notNull(), // "outfit" | "item"
   entityId: integer("entity_id").notNull(),
@@ -97,17 +100,5 @@ export const activityLog = pgTable("activity_log", {
 
 export type ActivityLogEntry = typeof activityLog.$inferSelect;
 
-// Keep existing users table for compatibility
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
-});
-
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
-});
-
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
+// Re-export auth models (sessions + users tables for Replit Auth)
+export * from "./models/auth";
