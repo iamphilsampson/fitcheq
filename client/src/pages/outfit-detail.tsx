@@ -1,8 +1,9 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useRoute, useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Tag, X, MoreVertical, Trash2, Camera, Image as ImageIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Loader2, Tag, X, MoreVertical, Trash2, Camera, Image as ImageIcon, ChevronLeft, ChevronRight, Wand2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
@@ -22,6 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground } from "@/lib/imageUtils";
 import type { Outfit, Item } from "@shared/schema";
 
 interface OutfitWithItems extends Outfit {
@@ -40,10 +42,25 @@ export default function OutfitDetail() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Core UI state
   const [isReuploading, setIsReuploading] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showPhotoOptions, setShowPhotoOptions] = useState(false);
+
+  // Background removal pipeline state
+  const [selectedFileBlob, setSelectedFileBlob] = useState<Blob | null>(null);
+  const [selectedFilePreview, setSelectedFilePreview] = useState<string | null>(null);
+  const [isRemoveBgStep, setIsRemoveBgStep] = useState(false);
+  const [isRemovingBg, setIsRemovingBg] = useState(false);
+  const [cutoutBlob, setCutoutBlob] = useState<Blob | null>(null);
+  const [isBgPickerMode, setIsBgPickerMode] = useState(false);
+  const [selectedBg, setSelectedBg] = useState(0);
+  const [compositeBlob, setCompositeBlob] = useState<Blob | null>(null);
+  const [isCompositing, setIsCompositing] = useState(false);
+  // True when we're running bg removal on the existing outfit photo (no source picker step)
+  const [isCurrentPhotoBgFlow, setIsCurrentPhotoBgFlow] = useState(false);
 
   // Touch swipe state
   const touchStartX = useRef(0);
@@ -56,7 +73,6 @@ export default function OutfitDetail() {
     enabled: !!outfitId,
   });
 
-  // Fetch the full sorted outfits list to determine prev/next neighbours
   const { data: allOutfits } = useQuery<OutfitSummary[]>({
     queryKey: ["/api/outfits"],
   });
@@ -66,6 +82,21 @@ export default function OutfitDetail() {
   const nextId = allOutfits && currentIndex < allOutfits.length - 1 ? allOutfits[currentIndex + 1].id : null;
   const totalCount = allOutfits?.length ?? 0;
   const positionLabel = currentIndex >= 0 && totalCount > 1 ? `${currentIndex + 1} / ${totalCount}` : null;
+
+  // Redraw preview canvas whenever bg selection changes in picker mode
+  useEffect(() => {
+    if (!isBgPickerMode || !cutoutBlob || !previewCanvasRef.current) return;
+    const canvas = previewCanvasRef.current;
+    const ctx = canvas.getContext("2d")!;
+    drawBackground(ctx, BACKGROUNDS[selectedBg], canvas.width, canvas.height);
+    const url = URL.createObjectURL(cutoutBlob);
+    const img = new Image();
+    img.onload = () => {
+      drawCutoutCentered(ctx, img, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  }, [isBgPickerMode, cutoutBlob, selectedBg]);
 
   const goToOutfit = useCallback((id: number) => {
     navigate(`/outfits/${id}`);
@@ -79,10 +110,154 @@ export default function OutfitDetail() {
   const handleTouchEnd = (e: React.TouchEvent) => {
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     const dy = e.changedTouches[0].clientY - touchStartY.current;
-    // Only trigger if clearly horizontal (dx dominant, threshold 60px)
     if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      if (dx < 0 && nextId) goToOutfit(nextId);   // swipe left → older
-      if (dx > 0 && prevId) goToOutfit(prevId);   // swipe right → newer
+      if (dx < 0 && nextId) goToOutfit(nextId);
+      if (dx > 0 && prevId) goToOutfit(prevId);
+    }
+  };
+
+  // Reset all photo-editing state and close the editing mode
+  const resetPhotoEditState = useCallback(() => {
+    setShowPhotoOptions(false);
+    setSelectedFileBlob(null);
+    setSelectedFilePreview(null);
+    setIsRemoveBgStep(false);
+    setIsRemovingBg(false);
+    setCutoutBlob(null);
+    setIsBgPickerMode(false);
+    setCompositeBlob(null);
+    setIsCompositing(false);
+    setIsCurrentPhotoBgFlow(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []);
+
+  const uploadBlobAndPatch = useCallback(async (blob: Blob) => {
+    setIsReuploading(true);
+    try {
+      const urlRes = await fetch("/api/uploads/request-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "outfit.jpg", size: blob.size, contentType: "image/jpeg" }),
+      });
+      if (!urlRes.ok) throw new Error("Failed to get upload URL");
+      const { uploadURL, objectPath } = await urlRes.json();
+
+      const upRes = await fetch(uploadURL, { method: "PUT", body: blob, headers: { "Content-Type": "image/jpeg" } });
+      if (!upRes.ok) throw new Error("Failed to upload image");
+
+      await apiRequest("PATCH", `/api/outfits/${outfitId}`, { fullImageUrl: objectPath });
+      queryClient.invalidateQueries({ queryKey: ["/api/outfits", outfitId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/outfits"] });
+      toast({ title: "Photo updated", description: "Outfit photo has been replaced." });
+      resetPhotoEditState();
+    } catch (error) {
+      toast({ title: "Upload failed", description: error instanceof Error ? error.message : "Something went wrong", variant: "destructive" });
+    } finally {
+      setIsReuploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }, [outfitId, resetPhotoEditState]);
+
+  // File picked via Replace Photo → enter bg removal pipeline
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !file.type.startsWith("image/")) return;
+    setSelectedFileBlob(file);
+    setSelectedFilePreview(URL.createObjectURL(file));
+    setCutoutBlob(null);
+    setCompositeBlob(null);
+    setIsRemoveBgStep(true);
+    setIsBgPickerMode(false);
+  };
+
+  // Run ML model; short-circuits if cutout already computed
+  const handleRemoveBg = async () => {
+    if (cutoutBlob) {
+      setIsRemoveBgStep(false);
+      setIsBgPickerMode(true);
+      setSelectedBg(0);
+      return;
+    }
+    const source = selectedFileBlob;
+    if (!source) return;
+    setIsRemovingBg(true);
+    try {
+      const cutout = await removeBgFromBlob(source);
+      setCutoutBlob(cutout);
+      setIsRemoveBgStep(false);
+      setIsBgPickerMode(true);
+      setSelectedBg(0);
+      setCompositeBlob(null);
+    } catch {
+      toast({ title: "Background removal failed", description: "Try again or skip to upload as-is", variant: "destructive" });
+    } finally {
+      setIsRemovingBg(false);
+    }
+  };
+
+  // Skip bg removal → upload the selected file as-is
+  const handleSkipBgRemoval = () => {
+    if (isCurrentPhotoBgFlow) {
+      resetPhotoEditState();
+    } else if (selectedFileBlob) {
+      uploadBlobAndPatch(selectedFileBlob);
+    }
+  };
+
+  // Composite cutout onto chosen background and upload
+  const handleComposite = async () => {
+    if (!cutoutBlob) return;
+    setIsCompositing(true);
+    try {
+      const blob = await compositeOnBackground(cutoutBlob, selectedBg);
+      setCompositeBlob(blob);
+      setIsCompositing(false); // switch to "Uploading..." state
+      await uploadBlobAndPatch(blob);
+    } catch {
+      toast({ title: "Failed to compose image", variant: "destructive" });
+      setIsCompositing(false);
+    }
+  };
+
+  // Remove Background from the current outfit photo (no new image needed)
+  const handleRemoveCurrentBg = async () => {
+    if (!outfit) return;
+    setShowPhotoOptions(true);
+    setIsCurrentPhotoBgFlow(true);
+    setSelectedFilePreview(outfit.fullImageUrl);
+    setIsRemoveBgStep(true);
+    setIsRemovingBg(true);
+    try {
+      const res = await fetch(outfit.fullImageUrl);
+      if (!res.ok) throw new Error("Failed to fetch current photo");
+      const blob = await res.blob();
+      const cutout = await removeBgFromBlob(blob);
+      setCutoutBlob(cutout);
+      setIsRemoveBgStep(false);
+      setIsBgPickerMode(true);
+      setSelectedBg(0);
+    } catch {
+      toast({ title: "Background removal failed", description: "Try again", variant: "destructive" });
+      resetPhotoEditState();
+    } finally {
+      setIsRemovingBg(false);
+    }
+  };
+
+  // Back button / cancel logic
+  const cancelPhotoEdit = () => {
+    if (isBgPickerMode) {
+      // From bg picker → back to bg removal choice (cutout preserved to skip re-inference)
+      setIsBgPickerMode(false);
+      setIsRemoveBgStep(true);
+    } else if (isRemoveBgStep && !isCurrentPhotoBgFlow) {
+      // From bg removal choice (Replace Photo flow) → back to source picker
+      setIsRemoveBgStep(false);
+      setSelectedFileBlob(null);
+      setSelectedFilePreview(null);
+      setCutoutBlob(null);
+    } else {
+      resetPhotoEditState();
     }
   };
 
@@ -91,7 +266,6 @@ export default function OutfitDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/outfits"] });
       toast({ title: "Outfit deleted", description: "The outfit has been removed." });
-      // Navigate to adjacent outfit if available, otherwise home
       if (prevId) navigate(`/outfits/${prevId}`);
       else if (nextId) navigate(`/outfits/${nextId}`);
       else navigate("/");
@@ -112,44 +286,6 @@ export default function OutfitDetail() {
       toast({ title: "Failed to remove", description: error instanceof Error ? error.message : "Something went wrong", variant: "destructive" });
     },
   });
-
-  const uploadBlobAndPatch = useCallback(async (blob: Blob) => {
-    setIsReuploading(true);
-    try {
-      const urlRes = await fetch("/api/uploads/request-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "outfit.jpg", size: blob.size, contentType: "image/jpeg" }),
-      });
-      if (!urlRes.ok) throw new Error("Failed to get upload URL");
-      const { uploadURL, objectPath } = await urlRes.json();
-
-      const upRes = await fetch(uploadURL, { method: "PUT", body: blob, headers: { "Content-Type": "image/jpeg" } });
-      if (!upRes.ok) throw new Error("Failed to upload image");
-
-      await apiRequest("PATCH", `/api/outfits/${outfitId}`, { fullImageUrl: objectPath });
-      queryClient.invalidateQueries({ queryKey: ["/api/outfits", outfitId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/outfits"] });
-      toast({ title: "Photo updated", description: "Outfit photo has been replaced." });
-      setShowPhotoOptions(false);
-    } catch (error) {
-      toast({ title: "Upload failed", description: error instanceof Error ? error.message : "Something went wrong", variant: "destructive" });
-    } finally {
-      setIsReuploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  }, [outfitId]);
-
-  const handleReupload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !file.type.startsWith("image/")) return;
-    setShowPhotoOptions(false);
-    await uploadBlobAndPatch(file);
-  };
-
-  const cancelPhotoEdit = () => {
-    setShowPhotoOptions(false);
-  };
 
   if (isLoading) {
     return (
@@ -186,9 +322,21 @@ export default function OutfitDetail() {
 
   const isEditingPhoto = showPhotoOptions;
 
+  // Derive header title from current editing state
+  let headerTitle = formattedDate;
+  if (isBgPickerMode) headerTitle = "Pick a background";
+  else if (isRemoveBgStep || showPhotoOptions) headerTitle = isCurrentPhotoBgFlow ? "Remove Background" : "Replace Photo";
+
   return (
     <div className="min-h-screen bg-background">
-      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleReupload} data-testid="input-reupload" />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileSelect}
+        data-testid="input-reupload"
+      />
 
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
         <div className="px-4 py-2 flex items-center justify-between">
@@ -203,7 +351,7 @@ export default function OutfitDetail() {
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <h1 className="text-base font-semibold text-foreground truncate min-w-0">
-              {isEditingPhoto ? "Change Photo" : formattedDate}
+              {headerTitle}
             </h1>
           </div>
           {!isEditingPhoto && (
@@ -218,10 +366,25 @@ export default function OutfitDetail() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setShowPhotoOptions(true)} disabled={isReuploading} data-testid="menu-change-photo">
-                    <Camera className="h-4 w-4" /> Change Photo
+                  <DropdownMenuItem
+                    onClick={() => setShowPhotoOptions(true)}
+                    disabled={isReuploading}
+                    data-testid="menu-replace-photo"
+                  >
+                    <Camera className="h-4 w-4" /> Replace Photo
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setShowDeleteDialog(true)} className="text-destructive focus:text-destructive" data-testid="menu-delete">
+                  <DropdownMenuItem
+                    onClick={handleRemoveCurrentBg}
+                    disabled={isReuploading}
+                    data-testid="menu-remove-bg"
+                  >
+                    <Wand2 className="h-4 w-4" /> Remove Background
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setShowDeleteDialog(true)}
+                    className="text-destructive focus:text-destructive"
+                    data-testid="menu-delete"
+                  >
                     <Trash2 className="h-4 w-4" /> Delete Outfit
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -233,28 +396,123 @@ export default function OutfitDetail() {
 
       <main className="p-4 space-y-4">
         {showPhotoOptions ? (
-          <div className="space-y-3 py-4">
-            <p className="text-sm text-muted-foreground text-center mb-2">Choose how to replace the photo</p>
-            <Button
-              variant="outline"
-              className="w-full gap-3 justify-start min-h-12 text-sm"
-              onClick={() => { fileInputRef.current?.setAttribute("capture", "environment"); fileInputRef.current?.click(); }}
-              data-testid="button-camera"
-            >
-              <Camera className="h-5 w-5 text-muted-foreground" /> Take a photo
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full gap-3 justify-start min-h-12 text-sm"
-              onClick={() => { fileInputRef.current?.removeAttribute("capture"); fileInputRef.current?.click(); }}
-              data-testid="button-gallery"
-            >
-              <ImageIcon className="h-5 w-5 text-muted-foreground" /> Choose from gallery
-            </Button>
-            <Button variant="ghost" className="w-full mt-2" onClick={cancelPhotoEdit} data-testid="button-cancel-photo">
-              Cancel
-            </Button>
-          </div>
+          isBgPickerMode && cutoutBlob ? (
+            // Background picker
+            <div className="space-y-4">
+              <div className="rounded-xl overflow-hidden bg-muted">
+                <canvas
+                  ref={previewCanvasRef}
+                  width={300}
+                  height={400}
+                  className="w-full"
+                  style={{ aspectRatio: "3/4", display: "block" }}
+                  data-testid="canvas-preview"
+                />
+              </div>
+
+              <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1">
+                {BACKGROUNDS.map((bg, i) => (
+                  <button
+                    key={bg.name}
+                    onClick={() => setSelectedBg(i)}
+                    className={`flex-shrink-0 flex flex-col items-center gap-1.5 transition-opacity ${selectedBg === i ? "opacity-100" : "opacity-55 hover:opacity-80"}`}
+                    data-testid={`button-bg-${i}`}
+                    title={bg.name}
+                  >
+                    <span
+                      className={`block w-12 h-12 rounded-full border-2 transition-all ${selectedBg === i ? "border-foreground scale-110 shadow-md" : "border-transparent"}`}
+                      style={{ background: bg.css }}
+                    />
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">{bg.name}</span>
+                  </button>
+                ))}
+              </div>
+
+              <Button
+                className="w-full gap-2"
+                size="lg"
+                onClick={handleComposite}
+                disabled={isCompositing || isReuploading}
+                data-testid="button-use-background"
+              >
+                {isCompositing
+                  ? <><Loader2 className="h-5 w-5 animate-spin" /> Compositing...</>
+                  : isReuploading
+                    ? <><Loader2 className="h-5 w-5 animate-spin" /> Uploading...</>
+                    : <><Upload className="h-5 w-5" /> Use this background</>}
+              </Button>
+            </div>
+
+          ) : isRemoveBgStep ? (
+            // Remove background choice
+            <div className="space-y-4">
+              <Card className="overflow-hidden">
+                <div className="aspect-[3/4] bg-muted">
+                  <img
+                    src={selectedFilePreview || ""}
+                    alt="Your photo"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              </Card>
+
+              <div className="space-y-2">
+                <Button
+                  className="w-full gap-2"
+                  size="lg"
+                  onClick={handleRemoveBg}
+                  disabled={isRemovingBg}
+                  data-testid="button-remove-bg"
+                >
+                  {isRemovingBg
+                    ? <><Loader2 className="h-5 w-5 animate-spin" /> Removing background...</>
+                    : <><Wand2 className="h-5 w-5" /> Remove Background</>}
+                </Button>
+                {isRemovingBg && (
+                  <p className="text-xs text-center text-muted-foreground">
+                    First time may take a moment while the model loads
+                  </p>
+                )}
+                {!isCurrentPhotoBgFlow && (
+                  <Button
+                    variant="ghost"
+                    className="w-full"
+                    size="lg"
+                    onClick={handleSkipBgRemoval}
+                    disabled={isRemovingBg || isReuploading}
+                    data-testid="button-skip-bg-removal"
+                  >
+                    {isReuploading ? <><Loader2 className="h-5 w-5 animate-spin" /> Uploading...</> : "Skip — upload as-is"}
+                  </Button>
+                )}
+              </div>
+            </div>
+
+          ) : (
+            // Source picker (Replace Photo)
+            <div className="space-y-3 py-4">
+              <p className="text-sm text-muted-foreground text-center mb-2">Choose how to replace the photo</p>
+              <Button
+                variant="outline"
+                className="w-full gap-3 justify-start min-h-12 text-sm"
+                onClick={() => { fileInputRef.current?.setAttribute("capture", "environment"); fileInputRef.current?.click(); }}
+                data-testid="button-camera"
+              >
+                <Camera className="h-5 w-5 text-muted-foreground" /> Take a photo
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full gap-3 justify-start min-h-12 text-sm"
+                onClick={() => { fileInputRef.current?.removeAttribute("capture"); fileInputRef.current?.click(); }}
+                data-testid="button-gallery"
+              >
+                <ImageIcon className="h-5 w-5 text-muted-foreground" /> Choose from gallery
+              </Button>
+              <Button variant="ghost" className="w-full mt-2" onClick={cancelPhotoEdit} data-testid="button-cancel-photo">
+                Cancel
+              </Button>
+            </div>
+          )
         ) : (
           <>
             {/* Photo with swipe navigation */}
@@ -279,7 +537,6 @@ export default function OutfitDetail() {
                 )}
               </div>
 
-              {/* Left edge tap — navigate to newer outfit */}
               {prevId && (
                 <button
                   className="absolute left-0 top-0 h-full w-14 flex items-center justify-start pl-1 opacity-0 active:opacity-100 focus:opacity-100"
@@ -293,7 +550,6 @@ export default function OutfitDetail() {
                 </button>
               )}
 
-              {/* Right edge tap — navigate to older outfit */}
               {nextId && (
                 <button
                   className="absolute right-0 top-0 h-full w-14 flex items-center justify-end pr-1 opacity-0 active:opacity-100 focus:opacity-100"
@@ -308,7 +564,6 @@ export default function OutfitDetail() {
               )}
             </div>
 
-            {/* Position indicator */}
             {positionLabel && (
               <p className="text-xs text-muted-foreground text-center -mt-2" data-testid="text-position">
                 {positionLabel}
