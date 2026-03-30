@@ -57,7 +57,6 @@ export default function OutfitDetail() {
   const [cutoutBlob, setCutoutBlob] = useState<Blob | null>(null);
   const [isBgPickerMode, setIsBgPickerMode] = useState(false);
   const [selectedBg, setSelectedBg] = useState(0);
-  const [compositeBlob, setCompositeBlob] = useState<Blob | null>(null);
   const [isCompositing, setIsCompositing] = useState(false);
   // True when we're running bg removal on the existing outfit photo (no source picker step)
   const [isCurrentPhotoBgFlow, setIsCurrentPhotoBgFlow] = useState(false);
@@ -134,7 +133,6 @@ export default function OutfitDetail() {
     setIsRemovingBg(false);
     setCutoutBlob(null);
     setIsBgPickerMode(false);
-    setCompositeBlob(null);
     setIsCompositing(false);
     setIsCurrentPhotoBgFlow(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -177,7 +175,6 @@ export default function OutfitDetail() {
       return URL.createObjectURL(file);
     });
     setCutoutBlob(null);
-    setCompositeBlob(null);
     setIsRemoveBgStep(true);
     setIsBgPickerMode(false);
   };
@@ -201,7 +198,6 @@ export default function OutfitDetail() {
       setIsRemoveBgStep(false);
       setIsBgPickerMode(true);
       setSelectedBg(0);
-      setCompositeBlob(null);
     } catch {
       if (!bgRemovalActiveRef.current) return; // stale error, flow already reset
       toast({ title: "Background removal failed", description: "Try again or skip to upload as-is", variant: "destructive" });
@@ -219,14 +215,13 @@ export default function OutfitDetail() {
     }
   };
 
-  // Composite cutout onto chosen background and upload
+  // Composite cutout onto chosen background and upload immediately
   const handleComposite = async () => {
     if (!cutoutBlob) return;
     setIsCompositing(true);
     try {
       const blob = await compositeOnBackground(cutoutBlob, selectedBg);
-      setCompositeBlob(blob);
-      setIsCompositing(false); // switch to "Uploading..." state
+      setIsCompositing(false); // switch button to "Uploading..." state
       await uploadBlobAndPatch(blob);
     } catch {
       toast({ title: "Failed to compose image", variant: "destructive" });
