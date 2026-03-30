@@ -21,6 +21,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -185,46 +192,53 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
-        <div className="px-4 py-2 flex items-center justify-between gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setShowSettings(true)}
-            data-testid="button-settings"
-          >
-            <Settings className="h-4 w-4" />
-          </Button>
-          <h1 className="text-lg font-bold tracking-tight text-foreground" style={{ fontFamily: "'Inter', sans-serif", letterSpacing: "-0.03em" }}>
+        <div className="px-4 py-2 flex items-center justify-between">
+          {/* Spacer keeps the title centred when the right element exists */}
+          <div className="w-9 flex-shrink-0" />
+          <h1 className="text-lg font-bold tracking-tight text-foreground flex-1 text-center" style={{ fontFamily: "'Inter', sans-serif", letterSpacing: "-0.03em" }}>
             fit<span className="text-primary">check</span>
           </h1>
-          {authLoading ? (
-            <div className="w-9 h-9 flex items-center justify-center">
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-            </div>
-          ) : isAuthenticated && user ? (
-            <button
-              onClick={() => logout()}
-              data-testid="button-user-menu"
-              className="rounded-full focus:outline-none focus:ring-2 focus:ring-primary"
-              title="Sign out"
-            >
-              <Avatar className="h-8 w-8">
-                {user.profileImageUrl && <AvatarImage src={user.profileImageUrl} alt={user.firstName ?? "User"} />}
-                <AvatarFallback className="text-xs">
-                  {user.firstName?.[0]?.toUpperCase() ?? <User className="h-3 w-3" />}
-                </AvatarFallback>
-              </Avatar>
-            </button>
-          ) : (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => { window.location.href = "/api/login"; }}
-              data-testid="button-sign-in"
-            >
-              <LogIn className="h-4 w-4" />
-            </Button>
-          )}
+          <div className="w-9 flex-shrink-0 flex justify-end">
+            {authLoading ? (
+              <div className="w-9 h-9 flex items-center justify-center">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              </div>
+            ) : isAuthenticated && user ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    data-testid="button-user-menu"
+                    className="rounded-full focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1"
+                  >
+                    <Avatar className="h-9 w-9">
+                      {user.profileImageUrl && <AvatarImage src={user.profileImageUrl} alt={user.firstName ?? "User"} />}
+                      <AvatarFallback className="text-xs">
+                        {user.firstName?.[0]?.toUpperCase() ?? <User className="h-3 w-3" />}
+                      </AvatarFallback>
+                    </Avatar>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem onClick={() => setShowSettings(true)} data-testid="menu-settings">
+                    <Settings className="h-4 w-4" /> Settings
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => logout()} data-testid="menu-sign-out">
+                    <LogOut className="h-4 w-4" /> Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => { window.location.href = "/api/login"; }}
+                data-testid="button-sign-in"
+              >
+                <LogIn className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </div>
       </header>
 
