@@ -62,6 +62,10 @@ export default function OutfitDetail() {
   // True when we're running bg removal on the existing outfit photo (no source picker step)
   const [isCurrentPhotoBgFlow, setIsCurrentPhotoBgFlow] = useState(false);
 
+  // Cancellation guard for async bg-removal operations.
+  // Set to false whenever the user exits the flow so in-flight results are ignored.
+  const bgRemovalActiveRef = useRef(false);
+
   // Touch swipe state
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
@@ -116,11 +120,16 @@ export default function OutfitDetail() {
     }
   };
 
-  // Reset all photo-editing state and close the editing mode
+  // Reset all photo-editing state and close the editing mode.
+  // Also cancels any in-flight bg-removal so stale async results are ignored.
   const resetPhotoEditState = useCallback(() => {
+    bgRemovalActiveRef.current = false;
     setShowPhotoOptions(false);
     setSelectedFileBlob(null);
-    setSelectedFilePreview(null);
+    setSelectedFilePreview((prev) => {
+      if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+      return null;
+    });
     setIsRemoveBgStep(false);
     setIsRemovingBg(false);
     setCutoutBlob(null);
@@ -163,7 +172,10 @@ export default function OutfitDetail() {
     const file = e.target.files?.[0];
     if (!file || !file.type.startsWith("image/")) return;
     setSelectedFileBlob(file);
-    setSelectedFilePreview(URL.createObjectURL(file));
+    setSelectedFilePreview((prev) => {
+      if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
     setCutoutBlob(null);
     setCompositeBlob(null);
     setIsRemoveBgStep(true);
@@ -180,15 +192,18 @@ export default function OutfitDetail() {
     }
     const source = selectedFileBlob;
     if (!source) return;
+    bgRemovalActiveRef.current = true;
     setIsRemovingBg(true);
     try {
       const cutout = await removeBgFromBlob(source);
+      if (!bgRemovalActiveRef.current) return; // user exited the flow
       setCutoutBlob(cutout);
       setIsRemoveBgStep(false);
       setIsBgPickerMode(true);
       setSelectedBg(0);
       setCompositeBlob(null);
     } catch {
+      if (!bgRemovalActiveRef.current) return; // stale error, flow already reset
       toast({ title: "Background removal failed", description: "Try again or skip to upload as-is", variant: "destructive" });
     } finally {
       setIsRemovingBg(false);
@@ -222,6 +237,7 @@ export default function OutfitDetail() {
   // Remove Background from the current outfit photo (no new image needed)
   const handleRemoveCurrentBg = async () => {
     if (!outfit) return;
+    bgRemovalActiveRef.current = true;
     setShowPhotoOptions(true);
     setIsCurrentPhotoBgFlow(true);
     setSelectedFilePreview(outfit.fullImageUrl);
@@ -229,14 +245,18 @@ export default function OutfitDetail() {
     setIsRemovingBg(true);
     try {
       const res = await fetch(outfit.fullImageUrl);
+      if (!bgRemovalActiveRef.current) return; // user exited the flow
       if (!res.ok) throw new Error("Failed to fetch current photo");
       const blob = await res.blob();
+      if (!bgRemovalActiveRef.current) return; // user exited the flow
       const cutout = await removeBgFromBlob(blob);
+      if (!bgRemovalActiveRef.current) return; // user exited the flow
       setCutoutBlob(cutout);
       setIsRemoveBgStep(false);
       setIsBgPickerMode(true);
       setSelectedBg(0);
     } catch {
+      if (!bgRemovalActiveRef.current) return; // stale error, flow already reset
       toast({ title: "Background removal failed", description: "Try again", variant: "destructive" });
       resetPhotoEditState();
     } finally {
@@ -251,10 +271,16 @@ export default function OutfitDetail() {
       setIsBgPickerMode(false);
       setIsRemoveBgStep(true);
     } else if (isRemoveBgStep && !isCurrentPhotoBgFlow) {
-      // From bg removal choice (Replace Photo flow) → back to source picker
+      // From bg removal choice (Replace Photo flow) → back to source picker.
+      // Cancel any in-flight ML model run so its result is discarded.
+      bgRemovalActiveRef.current = false;
       setIsRemoveBgStep(false);
+      setIsRemovingBg(false);
       setSelectedFileBlob(null);
-      setSelectedFilePreview(null);
+      setSelectedFilePreview((prev) => {
+        if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+        return null;
+      });
       setCutoutBlob(null);
     } else {
       resetPhotoEditState();
