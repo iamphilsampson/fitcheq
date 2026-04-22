@@ -30,6 +30,10 @@ class AuthStorage implements IAuthStorage {
         const oldId = existingByEmail.id;
         const newId = userData.id;
 
+        console.log(
+          `[auth] Migrating user record on first Google sign-in: email=${userData.email} oldId=${oldId} newId=${newId}`,
+        );
+
         const migratedUser = await db.transaction(async (tx) => {
           // Defensive: if a row with the new Google id already exists (unusual
           // account state), consolidate any data on it back onto the old id
