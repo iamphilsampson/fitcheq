@@ -95,14 +95,17 @@ export function drawCutoutCentered(
 
 export async function removeBgFromBlob(blob: Blob): Promise<Blob> {
   const { removeBackground } = await import("@imgly/background-removal");
-  return removeBackground(blob);
+  return removeBackground(blob, {
+    model: "isnet",
+    output: { format: "image/png" },
+  });
 }
 
 export function compositeOnBackground(
   cutoutBlob: Blob,
   bgIndex: number,
-  outputW = 900,
-  outputH = 1200
+  outputW = 2400,
+  outputH = 3200
 ): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const canvas = document.createElement("canvas");
@@ -118,7 +121,7 @@ export function compositeOnBackground(
       canvas.toBlob(
         (blob) => { if (blob) resolve(blob); else reject(new Error("Canvas empty")); },
         "image/jpeg",
-        0.92
+        0.95
       );
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Image load failed")); };
