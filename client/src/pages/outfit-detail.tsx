@@ -23,7 +23,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground } from "@/lib/imageUtils";
+import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, type BgRemovalProgress } from "@/lib/imageUtils";
+import { Progress } from "@/components/ui/progress";
 import type { Outfit, Item } from "@shared/schema";
 
 interface OutfitWithItems extends Outfit {
@@ -54,6 +55,7 @@ export default function OutfitDetail() {
   const [selectedFilePreview, setSelectedFilePreview] = useState<string | null>(null);
   const [isRemoveBgStep, setIsRemoveBgStep] = useState(false);
   const [isRemovingBg, setIsRemovingBg] = useState(false);
+  const [bgProgress, setBgProgress] = useState<BgRemovalProgress | null>(null);
   const [cutoutBlob, setCutoutBlob] = useState<Blob | null>(null);
   const [isBgPickerMode, setIsBgPickerMode] = useState(false);
   const [selectedBg, setSelectedBg] = useState(0);
@@ -131,6 +133,7 @@ export default function OutfitDetail() {
     });
     setIsRemoveBgStep(false);
     setIsRemovingBg(false);
+    setBgProgress(null);
     setCutoutBlob(null);
     setIsBgPickerMode(false);
     setIsCompositing(false);
@@ -191,8 +194,11 @@ export default function OutfitDetail() {
     if (!source) return;
     bgRemovalActiveRef.current = true;
     setIsRemovingBg(true);
+    setBgProgress(null);
     try {
-      const cutout = await removeBgFromBlob(source);
+      const cutout = await removeBgFromBlob(source, (p) => {
+        if (bgRemovalActiveRef.current) setBgProgress(p);
+      });
       if (!bgRemovalActiveRef.current) return; // user exited the flow
       setCutoutBlob(cutout);
       setIsRemoveBgStep(false);
@@ -203,6 +209,7 @@ export default function OutfitDetail() {
       toast({ title: "Background removal failed", description: "Try again or skip to upload as-is", variant: "destructive" });
     } finally {
       setIsRemovingBg(false);
+      setBgProgress(null);
     }
   };
 
@@ -238,13 +245,16 @@ export default function OutfitDetail() {
     setSelectedFilePreview(outfit.fullImageUrl);
     setIsRemoveBgStep(true);
     setIsRemovingBg(true);
+    setBgProgress(null);
     try {
       const res = await fetch(outfit.fullImageUrl);
       if (!bgRemovalActiveRef.current) return; // user exited the flow
       if (!res.ok) throw new Error("Failed to fetch current photo");
       const blob = await res.blob();
       if (!bgRemovalActiveRef.current) return; // user exited the flow
-      const cutout = await removeBgFromBlob(blob);
+      const cutout = await removeBgFromBlob(blob, (p) => {
+        if (bgRemovalActiveRef.current) setBgProgress(p);
+      });
       if (!bgRemovalActiveRef.current) return; // user exited the flow
       setCutoutBlob(cutout);
       setIsRemoveBgStep(false);
@@ -256,6 +266,7 @@ export default function OutfitDetail() {
       resetPhotoEditState();
     } finally {
       setIsRemovingBg(false);
+      setBgProgress(null);
     }
   };
 
@@ -486,13 +497,24 @@ export default function OutfitDetail() {
                   data-testid="button-remove-bg"
                 >
                   {isRemovingBg
-                    ? <><Loader2 className="h-5 w-5 animate-spin" /> Removing background...</>
+                    ? <><Loader2 className="h-5 w-5 animate-spin" /> {bgProgress ? (bgProgress.phase === "download" ? `Downloading model... ${bgProgress.percent}%` : `Processing... ${bgProgress.percent}%`) : "Removing background..."}</>
                     : <><Wand2 className="h-5 w-5" /> Remove Background</>}
                 </Button>
                 {isRemovingBg && (
-                  <p className="text-xs text-center text-muted-foreground">
-                    First time may take a moment while the model loads
-                  </p>
+                  <>
+                    <Progress
+                      value={bgProgress?.percent ?? 0}
+                      className="h-1.5"
+                      data-testid="progress-remove-bg"
+                    />
+                    <p className="text-xs text-center text-muted-foreground">
+                      {bgProgress?.phase === "download"
+                        ? "Downloading the background-removal model (one-time)"
+                        : bgProgress?.phase === "process"
+                        ? "Processing your photo"
+                        : "First time may take a moment while the model loads"}
+                    </p>
+                  </>
                 )}
                 {!isCurrentPhotoBgFlow && (
                   <Button

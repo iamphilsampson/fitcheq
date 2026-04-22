@@ -10,7 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import ReactCrop, { type Crop as CropType, centerCrop, makeAspectCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
-import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground } from "@/lib/imageUtils";
+import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, type BgRemovalProgress } from "@/lib/imageUtils";
+import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/hooks/use-auth";
 import {
   Dialog,
@@ -86,6 +87,7 @@ export default function AddOutfit() {
 
   const [isRemoveBgStep, setIsRemoveBgStep] = useState(false);
   const [isRemovingBg, setIsRemovingBg] = useState(false);
+  const [bgProgress, setBgProgress] = useState<BgRemovalProgress | null>(null);
   const [cutoutBlob, setCutoutBlob] = useState<Blob | null>(null);
   const [isBgPickerMode, setIsBgPickerMode] = useState(false);
   const [selectedBg, setSelectedBg] = useState(0);
@@ -194,8 +196,9 @@ export default function AddOutfit() {
     const source = croppedBlob || selectedImage;
     if (!source) return;
     setIsRemovingBg(true);
+    setBgProgress(null);
     try {
-      const cutout = await removeBgFromBlob(source);
+      const cutout = await removeBgFromBlob(source, (p) => setBgProgress(p));
       setCutoutBlob(cutout);
       setIsRemoveBgStep(false);
       setIsBgPickerMode(true);
@@ -209,6 +212,7 @@ export default function AddOutfit() {
       });
     } finally {
       setIsRemovingBg(false);
+      setBgProgress(null);
     }
   };
 
@@ -443,13 +447,24 @@ export default function AddOutfit() {
                 data-testid="button-remove-bg"
               >
                 {isRemovingBg
-                  ? <><Loader2 className="h-5 w-5 animate-spin" /> Removing background...</>
+                  ? <><Loader2 className="h-5 w-5 animate-spin" /> {bgProgress ? (bgProgress.phase === "download" ? `Downloading model... ${bgProgress.percent}%` : `Processing... ${bgProgress.percent}%`) : "Removing background..."}</>
                   : <><Wand2 className="h-5 w-5" /> Remove Background</>}
               </Button>
               {isRemovingBg && (
-                <p className="text-xs text-center text-muted-foreground">
-                  First time may take a moment while the model loads
-                </p>
+                <>
+                  <Progress
+                    value={bgProgress?.percent ?? 0}
+                    className="h-1.5"
+                    data-testid="progress-remove-bg"
+                  />
+                  <p className="text-xs text-center text-muted-foreground">
+                    {bgProgress?.phase === "download"
+                      ? "Downloading the background-removal model (one-time)"
+                      : bgProgress?.phase === "process"
+                      ? "Processing your photo"
+                      : "First time may take a moment while the model loads"}
+                  </p>
+                </>
               )}
               <Button
                 variant="ghost"
