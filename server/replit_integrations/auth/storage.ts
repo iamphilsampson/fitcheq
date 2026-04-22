@@ -31,7 +31,22 @@ class AuthStorage implements IAuthStorage {
         const newId = userData.id;
 
         const migratedUser = await db.transaction(async (tx) => {
-          // Re-link owned data first (no FK constraints on userId, so plain UPDATEs).
+          // Defensive: if a row with the new Google id already exists (unusual
+          // account state), consolidate any data on it back onto the old id
+          // first, then delete that stub row to free up the primary key.
+          const [existingByNewId] = await tx
+            .select()
+            .from(users)
+            .where(eq(users.id, newId));
+          if (existingByNewId) {
+            await tx.update(items).set({ userId: oldId }).where(eq(items.userId, newId));
+            await tx.update(outfits).set({ userId: oldId }).where(eq(outfits.userId, newId));
+            await tx.update(activityLog).set({ userId: oldId }).where(eq(activityLog.userId, newId));
+            await tx.delete(users).where(eq(users.id, newId));
+          }
+
+          // Re-link owned data from the legacy id to the new Google sub
+          // (no FK constraints on userId, so plain UPDATEs).
           await tx.update(items).set({ userId: newId }).where(eq(items.userId, oldId));
           await tx.update(outfits).set({ userId: newId }).where(eq(outfits.userId, oldId));
           await tx.update(activityLog).set({ userId: newId }).where(eq(activityLog.userId, oldId));
