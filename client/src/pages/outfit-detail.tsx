@@ -181,6 +181,7 @@ export default function OutfitDetail() {
         fullImageUrl: objectPath,
       };
 
+      let originalUploadFailed = false;
       if (originalBlob) {
         try {
           const origRes = await fetch("/api/uploads/request-url", {
@@ -201,9 +202,14 @@ export default function OutfitDetail() {
             });
             if (origUp.ok) {
               patchBody.originalImageUrl = origPath;
+            } else {
+              originalUploadFailed = true;
             }
+          } else {
+            originalUploadFailed = true;
           }
         } catch (origErr) {
+          originalUploadFailed = true;
           console.warn("[upload-outfit-patch] failed to upload original photo:", origErr);
         }
       } else if (source === "raw") {
@@ -216,7 +222,14 @@ export default function OutfitDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/outfits", outfitId] });
       queryClient.invalidateQueries({ queryKey: ["/api/outfits"] });
       setViewingOriginal(false);
-      toast({ title: "Photo updated", description: "Outfit photo has been replaced." });
+      if (originalUploadFailed) {
+        toast({
+          title: "Updated without original",
+          description: "We couldn't keep a copy of the raw photo. The composite was saved.",
+        });
+      } else {
+        toast({ title: "Photo updated", description: "Outfit photo has been replaced." });
+      }
       resetPhotoEditState();
     } catch (error) {
       toast({ title: "Upload failed", description: error instanceof Error ? error.message : "Something went wrong", variant: "destructive" });

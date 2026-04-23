@@ -347,6 +347,7 @@ export default function AddOutfit() {
       // offer a "View original" toggle later. For cropped/raw uploads, the
       // displayed image IS the original — nothing extra to store.
       let originalImageUrl: string | null = null;
+      let originalUploadFailed = false;
       if (uploadSource === "composite" && selectedImage) {
         try {
           const origRes = await fetch("/api/uploads/request-url", {
@@ -368,10 +369,15 @@ export default function AddOutfit() {
             if (origUp.ok) {
               originalImageUrl = origPath;
               console.info(`[upload-outfit] original bytes=${selectedImage.size} path=${origPath}`);
+            } else {
+              originalUploadFailed = true;
             }
+          } else {
+            originalUploadFailed = true;
           }
         } catch (origErr) {
           // Non-fatal: outfit still saves with just the composite.
+          originalUploadFailed = true;
           console.warn("[upload-outfit] failed to upload original photo:", origErr);
         }
       }
@@ -386,6 +392,14 @@ export default function AddOutfit() {
       const outfit = await outfitRes.json();
       // Clear any guest draft after successful save
       localStorage.removeItem(DRAFT_STORAGE_KEY);
+      // Soft-fail notice: outfit saved fine, but the user won't have the
+      // "View original" toggle on this one. Non-blocking by design.
+      if (originalUploadFailed) {
+        toast({
+          title: "Saved without original",
+          description: "We couldn't keep a copy of the raw photo. The composite was saved.",
+        });
+      }
       navigate(`/reconcile/${outfit.id}`);
     } catch (error) {
       toast({ title: "Upload failed", description: error instanceof Error ? error.message : "Something went wrong", variant: "destructive" });
