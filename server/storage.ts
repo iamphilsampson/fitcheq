@@ -12,7 +12,7 @@ import {
   type ActivityLogEntry,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, sql, isNull, and } from "drizzle-orm";
+import { eq, desc, sql, isNull, and, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // Items
@@ -171,7 +171,7 @@ export class DatabaseStorage implements IStorage {
     // Verify all items belong to this user — reject any that don't
     if (itemIds.length > 0) {
       const ownedItems = await db.select({ id: items.id }).from(items)
-        .where(and(eq(items.userId, userId), sql`${items.id} = ANY(${itemIds})`));
+        .where(and(eq(items.userId, userId), inArray(items.id, itemIds)));
       const ownedIds = new Set(ownedItems.map((i) => i.id));
       const allOwned = itemIds.every((id) => ownedIds.has(id));
       if (!allOwned) return; // silently reject if any item doesn't belong to user
@@ -187,7 +187,7 @@ export class DatabaseStorage implements IStorage {
     // Verify all items belong to this user — reject any that don't
     if (itemIds.length > 0) {
       const ownedItems = await db.select({ id: items.id }).from(items)
-        .where(and(eq(items.userId, userId), sql`${items.id} = ANY(${itemIds})`));
+        .where(and(eq(items.userId, userId), inArray(items.id, itemIds)));
       const ownedIds = new Set(ownedItems.map((i) => i.id));
       const allOwned = itemIds.every((id) => ownedIds.has(id));
       if (!allOwned) return; // silently reject if any item doesn't belong to user
