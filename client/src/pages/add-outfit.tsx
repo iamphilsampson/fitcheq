@@ -342,10 +342,44 @@ export default function AddOutfit() {
       const upRes = await fetch(uploadURL, { method: "PUT", body: uploadBlob, headers: { "Content-Type": "image/jpeg" } });
       if (!upRes.ok) throw new Error("Failed to upload image");
 
+      // If we composited onto a chosen background, also upload the truly raw
+      // original (pre-crop, pre-bg-removal) so the outfit detail page can
+      // offer a "View original" toggle later. For cropped/raw uploads, the
+      // displayed image IS the original — nothing extra to store.
+      let originalImageUrl: string | null = null;
+      if (uploadSource === "composite" && selectedImage) {
+        try {
+          const origRes = await fetch("/api/uploads/request-url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: selectedImage.name ?? "outfit-original.jpg",
+              size: selectedImage.size,
+              contentType: selectedImage.type || "image/jpeg",
+            }),
+          });
+          if (origRes.ok) {
+            const { uploadURL: origUrl, objectPath: origPath } = await origRes.json();
+            const origUp = await fetch(origUrl, {
+              method: "PUT",
+              body: selectedImage,
+              headers: { "Content-Type": selectedImage.type || "image/jpeg" },
+            });
+            if (origUp.ok) {
+              originalImageUrl = origPath;
+              console.info(`[upload-outfit] original bytes=${selectedImage.size} path=${origPath}`);
+            }
+          }
+        } catch (origErr) {
+          // Non-fatal: outfit still saves with just the composite.
+          console.warn("[upload-outfit] failed to upload original photo:", origErr);
+        }
+      }
+
       const outfitRes = await fetch("/api/outfits", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullImageUrl: objectPath, dateWorn, notes: notes || null }),
+        body: JSON.stringify({ fullImageUrl: objectPath, originalImageUrl, dateWorn, notes: notes || null }),
       });
       if (!outfitRes.ok) throw new Error("Failed to create outfit");
 

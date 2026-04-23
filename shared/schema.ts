@@ -23,6 +23,9 @@ export const outfits = pgTable("outfits", {
   userId: text("user_id"),
   dateWorn: date("date_worn").notNull(),
   fullImageUrl: text("full_image_url").notNull(),
+  // Optional: the truly raw photo before cropping/bg-removal/compositing.
+  // When set, the outfit detail page shows a low-key toggle to view the original.
+  originalImageUrl: text("original_image_url"),
   notes: text("notes"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });

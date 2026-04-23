@@ -83,7 +83,7 @@ The frontend follows a page-based structure with components organized by feature
 - **Home** (`/`): Shows landing page if not authenticated. Outfits tab (default, first) with card/feed view toggle + Wardrobe tab. Compact centered "fitcheck" header — spacer on left keeps title centred; right side shows user avatar (logged in) or sign-in icon (guest). Tapping the avatar opens a dropdown with Settings and Sign out — no standalone settings gear in the header. Supports `?tab=wardrobe` query param to restore tab state. Each outfit card shows date and tagged item count. Wardrobe tab has always-visible + button per category for bulk item adding. Draft restore banner appears after sign-in if localStorage draft exists.
 - **Add Outfit** (`/add-outfit`): Photo capture/upload with cropping, then an optional background removal step powered by MediaPipe Selfie Segmentation (Google, client-side WASM — purpose-built for human silhouettes). After crop, user sees "Remove Background" (runs ML model, then shows 6 editorial gradient swatches for background picker) or "Skip" (upload as-is). Background picker uses Canvas at 2400×3200px with live 3:4 preview. Backgrounds: Chalk, Sand Drift, Lilac Mist, Peach Haze, Slate Deep, Sage Blur. No clipboard/paste path. See `BACKGROUND_REMOVAL.md` for full approach history and alternative options.
 - **Tag Items** (`/reconcile/:outfitId`): Slot-based manual item tagging with search/autocomplete input for color/brand that doubles as wardrobe item search. Fullscreen image preview. Horizontal insert dividers between slots. Exit confirmation only when user has made actual changes (compares current state to initially loaded items).
-- **Outfit Detail** (`/outfits/:id`): Borderless outfit photo, DropdownMenu (3-dot) with "Change Photo" and "Delete Outfit" options, tagged items shown as text list with hover-reveal X remove buttons, link to tag items page.
+- **Outfit Detail** (`/outfits/:id`): Borderless outfit photo, DropdownMenu (3-dot) with "Change Photo" and "Delete Outfit" options, tagged items shown as text list with hover-reveal X remove buttons, link to tag items page. When the outfit has a stored `originalImageUrl` (set when the user composited onto a chosen background), a small `History` icon button in the top-right of the photo toggles between the composite and the truly raw original; an "Original" pill appears top-left while showing the original.
 - **Item Detail** (`/items/:id`): Ecommerce-style layout with subcategory as bold title, brand subtitle, color dot inline. DropdownMenu (3-dot) for Edit/Delete. Back navigates to `/?tab=wardrobe`. Edit mode uses PATCH API. Linked outfits shown below.
 
 ### Backend Architecture
@@ -102,7 +102,7 @@ Key API endpoints:
 ### Data Model
 The database schema uses a many-to-many relationship pattern:
 - **Items**: Individual clothing pieces with userId (nullable), category, subCategory, brand, size, color, imageUrl, and description
-- **Outfits**: Full outfit photos with userId (nullable), dateWorn, fullImageUrl, and notes
+- **Outfits**: Full outfit photos with userId (nullable), dateWorn, fullImageUrl, optional originalImageUrl (raw pre-crop/pre-bg-removal photo, only set when the user composited), and notes
 - **OutfitItems**: Junction table linking items to outfits
 - **ActivityLog**: Action log with userId (nullable), action, entityType, entityId, description
 - **Users**: Auth users (id, email, firstName, lastName, profileImageUrl, createdAt, updatedAt)

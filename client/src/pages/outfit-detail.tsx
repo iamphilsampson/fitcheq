@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRoute, useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Tag, X, MoreVertical, Trash2, Camera, Image as ImageIcon, ChevronLeft, ChevronRight, Wand2, Upload } from "lucide-react";
+import { ArrowLeft, Loader2, Tag, X, MoreVertical, Trash2, Camera, Image as ImageIcon, ChevronLeft, ChevronRight, Wand2, Upload, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -38,6 +38,8 @@ interface OutfitSummary {
   itemCount: number;
 }
 
+type UploadSource = "composite" | "raw";
+
 export default function OutfitDetail() {
   const [, params] = useRoute("/outfits/:id");
   const [, navigate] = useLocation();
@@ -71,7 +73,16 @@ export default function OutfitDetail() {
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
 
+  // "View original photo" toggle state — only meaningful when the outfit has
+  // a stored originalImageUrl (i.e. it was composited from a raw photo).
+  const [viewingOriginal, setViewingOriginal] = useState(false);
+
   const outfitId = params?.id ? parseInt(params.id) : null;
+
+  // Reset the view-original toggle whenever we navigate to a different outfit.
+  useEffect(() => {
+    setViewingOriginal(false);
+  }, [outfitId]);
 
   const { data: outfit, isLoading } = useQuery<OutfitWithItems>({
     queryKey: ["/api/outfits", outfitId],
@@ -141,9 +152,19 @@ export default function OutfitDetail() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
-  const uploadBlobAndPatch = useCallback(async (blob: Blob, source: "composite" | "raw" = "raw") => {
+  // Upload the new photo and PATCH the outfit. When `originalBlob` is provided
+  // (composite path with a fresh raw photo) we also upload it and patch
+  // originalImageUrl. When source==="raw", the displayed image IS the original
+  // so we clear any previously-stored original. When source==="composite"
+  // without an originalBlob (e.g. re-removing bg from the current photo), we
+  // leave originalImageUrl untouched to preserve any existing original.
+  const uploadBlobAndPatch = useCallback(async (
+    blob: Blob,
+    source: UploadSource = "raw",
+    originalBlob: Blob | null = null,
+  ) => {
     setIsReuploading(true);
-    console.info(`[upload-outfit-patch] outfitId=${outfitId} source=${source} bytes=${blob.size}`);
+    console.info(`[upload-outfit-patch] outfitId=${outfitId} source=${source} bytes=${blob.size} hasOriginal=${!!originalBlob}`);
     try {
       const urlRes = await fetch("/api/uploads/request-url", {
         method: "POST",
@@ -156,9 +177,45 @@ export default function OutfitDetail() {
       const upRes = await fetch(uploadURL, { method: "PUT", body: blob, headers: { "Content-Type": "image/jpeg" } });
       if (!upRes.ok) throw new Error("Failed to upload image");
 
-      await apiRequest("PATCH", `/api/outfits/${outfitId}`, { fullImageUrl: objectPath });
+      const patchBody: { fullImageUrl: string; originalImageUrl?: string | null } = {
+        fullImageUrl: objectPath,
+      };
+
+      if (originalBlob) {
+        try {
+          const origRes = await fetch("/api/uploads/request-url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: "outfit-original.jpg",
+              size: originalBlob.size,
+              contentType: originalBlob.type || "image/jpeg",
+            }),
+          });
+          if (origRes.ok) {
+            const { uploadURL: origUrl, objectPath: origPath } = await origRes.json();
+            const origUp = await fetch(origUrl, {
+              method: "PUT",
+              body: originalBlob,
+              headers: { "Content-Type": originalBlob.type || "image/jpeg" },
+            });
+            if (origUp.ok) {
+              patchBody.originalImageUrl = origPath;
+            }
+          }
+        } catch (origErr) {
+          console.warn("[upload-outfit-patch] failed to upload original photo:", origErr);
+        }
+      } else if (source === "raw") {
+        // Replacing with a raw/skip photo — the new fullImage IS the original,
+        // so any previously-stored original is no longer meaningful.
+        patchBody.originalImageUrl = null;
+      }
+
+      await apiRequest("PATCH", `/api/outfits/${outfitId}`, patchBody);
       queryClient.invalidateQueries({ queryKey: ["/api/outfits", outfitId] });
       queryClient.invalidateQueries({ queryKey: ["/api/outfits"] });
+      setViewingOriginal(false);
       toast({ title: "Photo updated", description: "Outfit photo has been replaced." });
       resetPhotoEditState();
     } catch (error) {
@@ -167,7 +224,7 @@ export default function OutfitDetail() {
       setIsReuploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
-  }, [outfitId, resetPhotoEditState]);
+  }, [outfitId, resetPhotoEditState, toast]);
 
   // File picked via Replace Photo → enter bg removal pipeline
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -243,7 +300,11 @@ export default function OutfitDetail() {
     try {
       const blob = await compositeOnBackground(cutoutBlob, selectedBg);
       setIsCompositing(false); // switch button to "Uploading..." state
-      await uploadBlobAndPatch(blob, "composite");
+      // If a fresh raw photo was just picked (Replace Photo), preserve it as
+      // the new original. If we're re-removing bg from the current outfit
+      // photo (no fresh raw available), leave originalImageUrl untouched.
+      const originalForUpload = isCurrentPhotoBgFlow ? null : selectedFileBlob;
+      await uploadBlobAndPatch(blob, "composite", originalForUpload);
     } catch (err) {
       if (err instanceof CutoutNotTransparentError) {
         toast({
@@ -608,13 +669,40 @@ export default function OutfitDetail() {
                   </div>
                 ) : (
                   <img
-                    src={outfit.fullImageUrl}
-                    alt={`Outfit from ${outfit.dateWorn}`}
+                    src={viewingOriginal && outfit.originalImageUrl ? outfit.originalImageUrl : outfit.fullImageUrl}
+                    alt={`Outfit from ${outfit.dateWorn}${viewingOriginal ? " (original)" : ""}`}
                     className="w-full h-full object-cover"
                     data-testid="outfit-photo"
                   />
                 )}
               </div>
+
+              {/* Subtle "View original" toggle — only shown when an original
+                  was stored (composite outfits). Sits in the top-right of the
+                  photo, with a muted "Original" pill on the top-left while
+                  showing the original. Kept low-key per the spec. */}
+              {!isReuploading && outfit.originalImageUrl && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setViewingOriginal((v) => !v)}
+                    className="absolute top-2 right-2 rounded-full bg-black/40 hover:bg-black/55 backdrop-blur-sm p-1.5 text-white transition-colors"
+                    aria-label={viewingOriginal ? "Show edited photo" : "Show original photo"}
+                    aria-pressed={viewingOriginal}
+                    data-testid="button-toggle-original"
+                  >
+                    <History className="h-4 w-4" />
+                  </button>
+                  {viewingOriginal && (
+                    <span
+                      className="absolute top-2 left-2 rounded-full bg-black/40 backdrop-blur-sm px-2 py-0.5 text-[11px] font-medium tracking-wide text-white uppercase"
+                      data-testid="badge-original"
+                    >
+                      Original
+                    </span>
+                  )}
+                </>
+              )}
 
               {prevId && (
                 <button
