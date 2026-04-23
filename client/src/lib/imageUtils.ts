@@ -94,9 +94,17 @@ export function drawCutoutCentered(
 }
 
 export type BgRemovalProgress = {
-  phase: "download" | "process";
+  phase: "download" | "process" | "server";
   percent: number;
 };
+
+export class BgRemovalTimeoutError extends Error {
+  readonly isTimeout = true;
+  constructor() {
+    super("Background removal timed out");
+    this.name = "BgRemovalTimeoutError";
+  }
+}
 
 async function removeBgISNet(
   blob: Blob,
@@ -133,29 +141,40 @@ function blobToBase64DataUri(blob: Blob): Promise<string> {
 
 async function removeBgServerSide(
   blob: Blob,
-  onProgress?: (p: BgRemovalProgress) => void
+  onProgress?: (p: BgRemovalProgress) => void,
+  timeoutMs = 60_000
 ): Promise<Blob> {
-  onProgress?.({ phase: "process", percent: 10 });
-
   const imageData = await blobToBase64DataUri(blob);
 
-  onProgress?.({ phase: "process", percent: 20 });
+  onProgress?.({ phase: "server", percent: 0 });
 
-  const res = await fetch("/api/bg-remove", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ imageData }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(`bg-remove API error ${res.status}: ${err.error}`);
+  try {
+    const res = await fetch("/api/bg-remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageData }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(`bg-remove API error ${res.status}: ${err.error}`);
+    }
+
+    const result = await res.blob();
+    return result;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new BgRemovalTimeoutError();
+    }
+    throw err;
   }
-
-  onProgress?.({ phase: "process", percent: 90 });
-  const result = await res.blob();
-  onProgress?.({ phase: "process", percent: 100 });
-  return result;
 }
 
 export async function removeBgFromBlob(
@@ -165,6 +184,9 @@ export async function removeBgFromBlob(
   try {
     return await removeBgServerSide(blob, onProgress);
   } catch (err) {
+    if (err instanceof BgRemovalTimeoutError) {
+      throw err;
+    }
     console.warn("[bg-removal] Server-side BiRefNet failed, falling back to ISNet:", err);
     return removeBgISNet(blob, onProgress);
   }

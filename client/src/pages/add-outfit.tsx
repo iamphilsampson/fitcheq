@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import ReactCrop, { type Crop as CropType, centerCrop, makeAspectCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
-import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, type BgRemovalProgress } from "@/lib/imageUtils";
+import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, BgRemovalTimeoutError, type BgRemovalProgress } from "@/lib/imageUtils";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -88,6 +88,7 @@ export default function AddOutfit() {
   const [isRemoveBgStep, setIsRemoveBgStep] = useState(false);
   const [isRemovingBg, setIsRemovingBg] = useState(false);
   const [bgProgress, setBgProgress] = useState<BgRemovalProgress | null>(null);
+  const [bgTimedOut, setBgTimedOut] = useState(false);
   const [cutoutBlob, setCutoutBlob] = useState<Blob | null>(null);
   const [isBgPickerMode, setIsBgPickerMode] = useState(false);
   const [selectedBg, setSelectedBg] = useState(0);
@@ -197,6 +198,7 @@ export default function AddOutfit() {
     if (!source) return;
     setIsRemovingBg(true);
     setBgProgress(null);
+    setBgTimedOut(false);
     try {
       const cutout = await removeBgFromBlob(source, (p) => setBgProgress(p));
       setCutoutBlob(cutout);
@@ -204,12 +206,16 @@ export default function AddOutfit() {
       setIsBgPickerMode(true);
       setSelectedBg(0);
       setCompositeBlob(null);
-    } catch {
-      toast({
-        title: "Background removal failed",
-        description: "Try again or skip to upload as-is",
-        variant: "destructive",
-      });
+    } catch (err) {
+      if (err instanceof BgRemovalTimeoutError) {
+        setBgTimedOut(true);
+      } else {
+        toast({
+          title: "Background removal failed",
+          description: "Try again or skip to upload as-is",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsRemovingBg(false);
       setBgProgress(null);
@@ -217,6 +223,7 @@ export default function AddOutfit() {
   };
 
   const handleSkipBgRemoval = () => {
+    setBgTimedOut(false);
     setIsRemoveBgStep(false);
   };
 
@@ -244,6 +251,7 @@ export default function AddOutfit() {
     setIsCropping(false);
     setIsRemoveBgStep(false);
     setIsRemovingBg(false);
+    setBgTimedOut(false);
     setCutoutBlob(null);
     setIsBgPickerMode(false);
     setCompositeBlob(null);
@@ -439,43 +447,85 @@ export default function AddOutfit() {
             </Card>
 
             <div className="space-y-2">
-              <Button
-                className="w-full gap-2"
-                size="lg"
-                onClick={handleRemoveBg}
-                disabled={isRemovingBg}
-                data-testid="button-remove-bg"
-              >
-                {isRemovingBg
-                  ? <><Loader2 className="h-5 w-5 animate-spin" /> {bgProgress ? (bgProgress.phase === "download" ? `Downloading model... ${bgProgress.percent}%` : `Processing... ${bgProgress.percent}%`) : "Removing background..."}</>
-                  : <><Wand2 className="h-5 w-5" /> Remove Background</>}
-              </Button>
-              {isRemovingBg && (
+              {bgTimedOut ? (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 space-y-3 text-center" data-testid="container-bg-timeout">
+                  <p className="text-sm font-medium text-foreground">Background removal timed out</p>
+                  <p className="text-xs text-muted-foreground">The server is taking longer than expected. You can try again or skip and upload as-is.</p>
+                  <div className="flex gap-2">
+                    <Button
+                      className="flex-1 gap-2"
+                      size="sm"
+                      onClick={handleRemoveBg}
+                      data-testid="button-retry-bg"
+                    >
+                      <Wand2 className="h-4 w-4" /> Try again
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      size="sm"
+                      onClick={handleSkipBgRemoval}
+                      data-testid="button-skip-after-timeout"
+                    >
+                      Skip
+                    </Button>
+                  </div>
+                </div>
+              ) : (
                 <>
-                  <Progress
-                    value={bgProgress?.percent ?? 0}
-                    className="h-1.5"
-                    data-testid="progress-remove-bg"
-                  />
-                  <p className="text-xs text-center text-muted-foreground">
-                    {bgProgress?.phase === "download"
-                      ? "Downloading the background-removal model (one-time)"
-                      : bgProgress?.phase === "process"
-                      ? "Processing your photo"
-                      : "First time may take a moment while the model loads"}
-                  </p>
+                  <Button
+                    className="w-full gap-2"
+                    size="lg"
+                    onClick={handleRemoveBg}
+                    disabled={isRemovingBg}
+                    data-testid="button-remove-bg"
+                  >
+                    {isRemovingBg
+                      ? <><Loader2 className="h-5 w-5 animate-spin" /> Removing background...</>
+                      : <><Wand2 className="h-5 w-5" /> Remove Background</>}
+                  </Button>
+                  {isRemovingBg && (
+                    <>
+                      {bgProgress?.phase === "server" ? (
+                        <>
+                          <div
+                            className="relative h-1.5 rounded-full overflow-hidden bg-primary/20"
+                            data-testid="progress-remove-bg-indeterminate"
+                          >
+                            <div className="absolute inset-y-0 w-1/2 bg-primary rounded-full animate-indeterminate" />
+                          </div>
+                          <p className="text-xs text-center text-muted-foreground" data-testid="text-bg-status">
+                            Removing background… this may take up to 30 seconds
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <Progress
+                            value={bgProgress?.percent ?? 0}
+                            className="h-1.5"
+                            data-testid="progress-remove-bg"
+                          />
+                          <p className="text-xs text-center text-muted-foreground" data-testid="text-bg-status">
+                            {bgProgress?.phase === "download"
+                              ? "Downloading the background-removal model (one-time)"
+                              : "Processing your photo"}
+                          </p>
+                        </>
+                      )}
+                    </>
+                  )}
+                  <Button
+                    variant="ghost"
+                    className="w-full"
+                    size="lg"
+                    onClick={handleSkipBgRemoval}
+                    disabled={isRemovingBg}
+                    data-testid="button-skip-bg-removal"
+                  >
+                    Skip — upload as-is
+                  </Button>
                 </>
               )}
-              <Button
-                variant="ghost"
-                className="w-full"
-                size="lg"
-                onClick={handleSkipBgRemoval}
-                disabled={isRemovingBg}
-                data-testid="button-skip-bg-removal"
-              >
-                Skip — upload as-is
-              </Button>
             </div>
           </div>
 
