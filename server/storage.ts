@@ -104,6 +104,7 @@ export class DatabaseStorage implements IStorage {
         userId: outfits.userId,
         dateWorn: outfits.dateWorn,
         fullImageUrl: outfits.fullImageUrl,
+        originalImageUrl: outfits.originalImageUrl,
         notes: outfits.notes,
         createdAt: outfits.createdAt,
         itemCount: sql<number>`cast(count(${outfitItems.id}) as int)`,
