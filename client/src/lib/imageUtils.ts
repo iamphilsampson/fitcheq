@@ -27,13 +27,15 @@ export const BACKGROUNDS = [
     angle: 140,
     css: "linear-gradient(140deg, #FDECD2, #E8856A)",
   },
+  // Previous "Slate Deep" — kept for reference, swap back here if needed:
+  // { name: "Slate Deep", type: "linear" as const, from: "#363B4E", to: "#181C2A",
+  //   angle: 155, css: "linear-gradient(155deg, #363B4E, #181C2A)" },
   {
-    name: "Slate Deep",
-    type: "linear" as const,
-    from: "#363B4E",
-    to: "#181C2A",
-    angle: 155,
-    css: "linear-gradient(155deg, #363B4E, #181C2A)",
+    name: "Cloud Mist",
+    type: "radial" as const,
+    inner: "#EEF4FB",
+    outer: "#B6CBE0",
+    css: "radial-gradient(circle at 40% 35%, #EEF4FB, #B6CBE0)",
   },
   {
     name: "Sage Blur",

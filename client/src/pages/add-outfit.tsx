@@ -418,7 +418,7 @@ export default function AddOutfit() {
                   title={bg.name}
                 >
                   <span
-                    className={`block w-12 h-12 rounded-full border-2 transition-all ${selectedBg === i ? "border-foreground scale-110 shadow-md" : "border-transparent"}`}
+                    className={`block w-12 h-12 shrink-0 aspect-square rounded-full border-2 box-border transition-all ${selectedBg === i ? "border-foreground scale-110 shadow-md" : "border-transparent"}`}
                     style={{ background: bg.css }}
                   />
                   <span className="text-[10px] text-muted-foreground whitespace-nowrap">{bg.name}</span>
