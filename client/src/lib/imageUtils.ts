@@ -249,13 +249,24 @@ export async function removeBgFromBlob(
   return result;
 }
 
-export function compositeOnBackground(
+export async function compositeOnBackground(
   cutoutBlob: Blob,
   bgIndex: number,
   outputW = 2400,
   outputH = 3200
 ): Promise<Blob> {
-  return new Promise((resolve, reject) => {
+  // Defense-in-depth: refuse to composite an essentially-opaque cutout.
+  // Without this, callers that bypass the call-site guard would still
+  // produce a misleading composite where the chosen background is fully
+  // covered by the original photo (Task #20 root cause).
+  const transparentRatio = await measureCutoutTransparency(cutoutBlob);
+  console.info(
+    `[composite] transparentRatio=${transparentRatio.toFixed(3)} bgIndex=${bgIndex}`
+  );
+  if (transparentRatio < 0.05) {
+    throw new CutoutNotTransparentError(transparentRatio);
+  }
+  return new Promise<Blob>((resolve, reject) => {
     const canvas = document.createElement("canvas");
     canvas.width = outputW;
     canvas.height = outputH;
