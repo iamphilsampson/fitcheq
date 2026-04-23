@@ -249,11 +249,23 @@ export async function removeBgFromBlob(
   return result;
 }
 
+export type CropRect = { x: number; y: number; w: number; h: number };
+
+/**
+ * Composite a cutout (RGBA, full-image dims from BiRefNet) onto a background.
+ *
+ * Two modes:
+ * - cropRect=null → legacy behaviour: 2400×3200 canvas, cutout fit-centered.
+ * - cropRect set  → output canvas is sized to the crop rectangle (capped at
+ *   maxLongSide). The crop region of the cutout is drawn into the canvas so
+ *   the final image only shows the user's intended frame, while the segmenter
+ *   still benefited from full-image context.
+ */
 export async function compositeOnBackground(
   cutoutBlob: Blob,
   bgIndex: number,
-  outputW = 2400,
-  outputH = 3200
+  cropRect: CropRect | null = null,
+  maxLongSide = 2400
 ): Promise<Blob> {
   // Defense-in-depth: refuse to composite an essentially-opaque cutout.
   // Without this, callers that bypass the call-site guard would still
@@ -261,26 +273,86 @@ export async function compositeOnBackground(
   // covered by the original photo.
   const transparentRatio = await measureCutoutTransparency(cutoutBlob);
   console.info(
-    `[composite] transparentRatio=${transparentRatio.toFixed(3)} bgIndex=${bgIndex}`
+    `[composite] transparentRatio=${transparentRatio.toFixed(3)} bgIndex=${bgIndex} cropped=${!!cropRect}`
   );
   if (transparentRatio < 0.05) {
     throw new CutoutNotTransparentError(transparentRatio);
   }
   return new Promise<Blob>((resolve, reject) => {
-    const canvas = document.createElement("canvas");
-    canvas.width = outputW;
-    canvas.height = outputH;
-    const ctx = canvas.getContext("2d")!;
-    drawBackground(ctx, BACKGROUNDS[bgIndex], outputW, outputH);
     const url = URL.createObjectURL(cutoutBlob);
     const img = new Image();
     img.onload = () => {
-      drawCutoutCentered(ctx, img, outputW, outputH);
+      let outW: number;
+      let outH: number;
+      if (cropRect) {
+        const longest = Math.max(cropRect.w, cropRect.h);
+        const scale = longest > maxLongSide ? maxLongSide / longest : 1;
+        outW = Math.max(1, Math.round(cropRect.w * scale));
+        outH = Math.max(1, Math.round(cropRect.h * scale));
+      } else {
+        outW = 2400;
+        outH = 3200;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = outW;
+      canvas.height = outH;
+      const ctx = canvas.getContext("2d")!;
+      drawBackground(ctx, BACKGROUNDS[bgIndex], outW, outH);
+      if (cropRect) {
+        // Draw just the crop region of the full-image cutout into the output.
+        ctx.drawImage(
+          img,
+          cropRect.x, cropRect.y, cropRect.w, cropRect.h,
+          0, 0, outW, outH
+        );
+      } else {
+        drawCutoutCentered(ctx, img, outW, outH);
+      }
       URL.revokeObjectURL(url);
       canvas.toBlob(
         (blob) => { if (blob) resolve(blob); else reject(new Error("Canvas empty")); },
         "image/jpeg",
         0.95
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Image load failed")); };
+    img.src = url;
+  });
+}
+
+/**
+ * Produce a cropped-only JPEG (no background fill). Used by the
+ * "skip background removal" path so the saved photo matches the user's
+ * chosen frame, with the longest side capped for storage sanity.
+ */
+export async function cropImageBlob(
+  sourceBlob: Blob,
+  cropRect: CropRect,
+  maxLongSide = 2400,
+  quality = 0.92
+): Promise<Blob> {
+  return new Promise<Blob>((resolve, reject) => {
+    const url = URL.createObjectURL(sourceBlob);
+    const img = new Image();
+    img.onload = () => {
+      const longest = Math.max(cropRect.w, cropRect.h);
+      const scale = longest > maxLongSide ? maxLongSide / longest : 1;
+      const outW = Math.max(1, Math.round(cropRect.w * scale));
+      const outH = Math.max(1, Math.round(cropRect.h * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = outW;
+      canvas.height = outH;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(
+        img,
+        cropRect.x, cropRect.y, cropRect.w, cropRect.h,
+        0, 0, outW, outH
+      );
+      URL.revokeObjectURL(url);
+      canvas.toBlob(
+        (blob) => { if (blob) resolve(blob); else reject(new Error("Canvas empty")); },
+        "image/jpeg",
+        quality
       );
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Image load failed")); };

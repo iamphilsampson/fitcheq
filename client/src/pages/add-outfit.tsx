@@ -8,9 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import ReactCrop, { type Crop as CropType, centerCrop, makeAspectCrop } from "react-image-crop";
+import ReactCrop, { type Crop as CropType } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
-import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, measureCutoutTransparency, BgRemovalTimeoutError, CutoutNotTransparentError, type BgRemovalProgress } from "@/lib/imageUtils";
+import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, cropImageBlob, measureCutoutTransparency, BgRemovalTimeoutError, CutoutNotTransparentError, type BgRemovalProgress, type CropRect } from "@/lib/imageUtils";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -47,20 +47,26 @@ function dataUrlToBlob(dataUrl: string): Blob {
   return new Blob([bytes], { type: mimeType });
 }
 
-function getCroppedBlob(image: HTMLImageElement, crop: CropType): Promise<Blob> {
-  const canvas = document.createElement("canvas");
+function cropToImagePixels(image: HTMLImageElement, crop: CropType): CropRect {
+  // ReactCrop reports crop in displayed (CSS) pixels regardless of unit; we
+  // convert back to natural image pixels for downstream canvas work.
   const scaleX = image.naturalWidth / image.width;
   const scaleY = image.naturalHeight / image.height;
-  const pxCrop = {
-    x: (crop.x || 0) * scaleX,
-    y: (crop.y || 0) * scaleY,
-    width: (crop.width || 0) * scaleX,
-    height: (crop.height || 0) * scaleY,
+  return {
+    x: Math.round((crop.x || 0) * scaleX),
+    y: Math.round((crop.y || 0) * scaleY),
+    w: Math.round((crop.width || 0) * scaleX),
+    h: Math.round((crop.height || 0) * scaleY),
   };
-  canvas.width = pxCrop.width;
-  canvas.height = pxCrop.height;
+}
+
+function getCroppedBlob(image: HTMLImageElement, crop: CropType): Promise<Blob> {
+  const r = cropToImagePixels(image, crop);
+  const canvas = document.createElement("canvas");
+  canvas.width = r.w;
+  canvas.height = r.h;
   const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(image, pxCrop.x, pxCrop.y, pxCrop.width, pxCrop.height, 0, 0, pxCrop.width, pxCrop.height);
+  ctx.drawImage(image, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
   return new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Canvas empty"))), "image/jpeg", 0.92)
   );
@@ -80,6 +86,11 @@ export default function AddOutfit() {
   const [isCropping, setIsCropping] = useState(false);
   const [croppedPreview, setCroppedPreview] = useState<string | null>(null);
   const [croppedBlob, setCroppedBlob] = useState<Blob | null>(null);
+  // Crop rectangle in original-image pixel coordinates. Used so the
+  // background-removal step can run on the *full* image (max context for the
+  // segmenter) while the final composite/skip output still respects the
+  // user's chosen frame.
+  const [cropRect, setCropRect] = useState<CropRect | null>(null);
   const [dateWorn, setDateWorn] = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
   const [isUploading, setIsUploading] = useState(false);
@@ -117,6 +128,22 @@ export default function AddOutfit() {
     }
   }, [isAuthenticated]);
 
+  // Preview canvas pixel dimensions follow the crop's aspect ratio so the
+  // user sees the actual final frame, not a stretched 3:4 placeholder.
+  const previewDims = (() => {
+    const MAX = 600;
+    if (cropRect && cropRect.w > 0 && cropRect.h > 0) {
+      const longest = Math.max(cropRect.w, cropRect.h);
+      const scale = longest > MAX ? MAX / longest : 1;
+      return {
+        w: Math.max(1, Math.round(cropRect.w * scale)),
+        h: Math.max(1, Math.round(cropRect.h * scale)),
+      };
+    }
+    return { w: 300, h: 400 };
+  })();
+  const previewAspect = `${previewDims.w} / ${previewDims.h}`;
+
   // Redraw preview canvas whenever selected background changes in bg picker mode
   useEffect(() => {
     if (!isBgPickerMode || !cutoutBlob || !previewCanvasRef.current) return;
@@ -126,11 +153,29 @@ export default function AddOutfit() {
     const url = URL.createObjectURL(cutoutBlob);
     const img = new Image();
     img.onload = () => {
-      drawCutoutCentered(ctx, img, canvas.width, canvas.height);
+      if (cropRect && img.naturalWidth > 0 && img.naturalHeight > 0) {
+        // Only safe to draw the crop region if the cutout is at original
+        // image dimensions (it should be — BiRefNet preserves dims). Sanity
+        // check against image natural size to avoid out-of-bounds blanks.
+        const fits =
+          cropRect.x + cropRect.w <= img.naturalWidth &&
+          cropRect.y + cropRect.h <= img.naturalHeight;
+        if (fits) {
+          ctx.drawImage(
+            img,
+            cropRect.x, cropRect.y, cropRect.w, cropRect.h,
+            0, 0, canvas.width, canvas.height
+          );
+        } else {
+          drawCutoutCentered(ctx, img, canvas.width, canvas.height);
+        }
+      } else {
+        drawCutoutCentered(ctx, img, canvas.width, canvas.height);
+      }
       URL.revokeObjectURL(url);
     };
     img.src = url;
-  }, [isBgPickerMode, cutoutBlob, selectedBg]);
+  }, [isBgPickerMode, cutoutBlob, selectedBg, cropRect, previewDims.w, previewDims.h]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -142,6 +187,7 @@ export default function AddOutfit() {
     setSelectedImage(file);
     setCroppedPreview(null);
     setCroppedBlob(null);
+    setCropRect(null);
     setCompositeBlob(null);
     setIsRemoveBgStep(false);
     setIsBgPickerMode(false);
@@ -162,26 +208,43 @@ export default function AddOutfit() {
     } catch { }
   };
 
-  const onImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
-    const { width, height } = e.currentTarget;
-    setCrop(centerCrop(makeAspectCrop({ unit: "%", width: 90 }, 3 / 4, width, height), width, height));
+  const onImageLoad = useCallback((_e: React.SyntheticEvent<HTMLImageElement>) => {
+    // Free-form crop: default to a centred 90% rectangle that follows the
+    // image's own aspect ratio. The user can drag any edge or corner.
+    setCrop({ unit: "%", x: 5, y: 5, width: 90, height: 90 });
   }, []);
 
   const handleCropDone = async () => {
-    if (!imgRef.current || !crop) return;
+    if (!imgRef.current || !crop || !crop.width || !crop.height || !selectedImage) return;
     try {
-      const blob = await getCroppedBlob(imgRef.current, crop);
+      const rect = cropToImagePixels(imgRef.current, crop);
+      // Cap the cropped preview/upload at 2400px on the longest side so
+      // tight crops produce smaller files than the previous fixed 2400×3200.
+      const blob = await cropImageBlob(selectedImage, rect, 2400, 0.92);
+      setCropRect(rect);
       setCroppedBlob(blob);
       setCroppedPreview(URL.createObjectURL(blob));
       setIsCropping(false);
       setIsRemoveBgStep(true);
     } catch {
-      toast({ title: "Crop failed", variant: "destructive" });
-      setIsCropping(false);
+      // Fallback to canvas-based crop from the displayed image element.
+      try {
+        const rect = cropToImagePixels(imgRef.current, crop);
+        const blob = await getCroppedBlob(imgRef.current, crop);
+        setCropRect(rect);
+        setCroppedBlob(blob);
+        setCroppedPreview(URL.createObjectURL(blob));
+        setIsCropping(false);
+        setIsRemoveBgStep(true);
+      } catch {
+        toast({ title: "Crop failed", variant: "destructive" });
+        setIsCropping(false);
+      }
     }
   };
 
   const handleSkipCrop = () => {
+    setCropRect(null);
     setIsCropping(false);
     setIsRemoveBgStep(true);
   };
@@ -194,7 +257,11 @@ export default function AddOutfit() {
       setSelectedBg(0);
       return;
     }
-    const source = croppedBlob || selectedImage;
+    // Send the FULL original image to the segmenter when available, so the
+    // model has maximum context to find the person. We later apply the user's
+    // crop when compositing. Fall back to whatever blob we have (e.g. draft
+    // restore path where selectedImage is null but croppedBlob was rehydrated).
+    const source = selectedImage || croppedBlob;
     if (!source) return;
     setIsRemovingBg(true);
     setBgProgress(null);
@@ -246,7 +313,9 @@ export default function AddOutfit() {
     if (!cutoutBlob) return;
     setIsCompositing(true);
     try {
-      const blob = await compositeOnBackground(cutoutBlob, selectedBg);
+      // Pass cropRect so the final composite is sized to the user's chosen
+      // frame. When null (skip-crop path), the legacy 2400×3200 fit applies.
+      const blob = await compositeOnBackground(cutoutBlob, selectedBg, cropRect);
       setCompositeBlob(blob);
       setImagePreview(URL.createObjectURL(blob));
       setIsBgPickerMode(false);
@@ -275,6 +344,7 @@ export default function AddOutfit() {
     setImagePreview(null);
     setCroppedPreview(null);
     setCroppedBlob(null);
+    setCropRect(null);
     setIsCropping(false);
     setIsRemoveBgStep(false);
     setIsRemovingBg(false);
@@ -479,13 +549,13 @@ export default function AddOutfit() {
               </Button>
             </div>
 
-            <div className="rounded-xl overflow-hidden bg-muted">
+            <div className="rounded-xl overflow-hidden bg-muted flex items-center justify-center">
               <canvas
                 ref={previewCanvasRef}
-                width={300}
-                height={400}
-                className="w-full"
-                style={{ aspectRatio: "3/4", display: "block" }}
+                width={previewDims.w}
+                height={previewDims.h}
+                className="max-w-full max-h-[60vh] w-auto h-auto"
+                style={{ aspectRatio: previewAspect, display: "block" }}
                 data-testid="canvas-preview"
               />
             </div>
