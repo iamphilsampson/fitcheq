@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import ReactCrop, { type Crop as CropType, centerCrop, makeAspectCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
-import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, BgRemovalTimeoutError, type BgRemovalProgress } from "@/lib/imageUtils";
+import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, measureCutoutTransparency, BgRemovalTimeoutError, CutoutNotTransparentError, type BgRemovalProgress } from "@/lib/imageUtils";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -201,6 +201,14 @@ export default function AddOutfit() {
     setBgTimedOut(false);
     try {
       const cutout = await removeBgFromBlob(source, (p) => setBgProgress(p));
+      // Guard: if the segmenter returned an essentially-opaque image, we'd
+      // produce a "fake" composite where the chosen background is fully covered
+      // by the original photo. Detect and surface a clear message instead.
+      const transparentRatio = await measureCutoutTransparency(cutout);
+      console.info(`[bg-removal] transparentRatio=${transparentRatio.toFixed(3)}`);
+      if (transparentRatio < 0.05) {
+        throw new CutoutNotTransparentError(transparentRatio);
+      }
       setCutoutBlob(cutout);
       setIsRemoveBgStep(false);
       setIsBgPickerMode(true);
@@ -209,6 +217,13 @@ export default function AddOutfit() {
     } catch (err) {
       if (err instanceof BgRemovalTimeoutError) {
         setBgTimedOut(true);
+      } else if (err instanceof CutoutNotTransparentError) {
+        toast({
+          title: "Couldn't isolate the subject",
+          description:
+            "Background removal didn't find a clear person — try a different photo (avoid mirrors) or skip to upload as-is.",
+          variant: "destructive",
+        });
       } else {
         toast({
           title: "Background removal failed",
@@ -287,15 +302,22 @@ export default function AddOutfit() {
     setIsUploading(true);
     try {
       let uploadBlob: Blob;
+      let uploadSource: "composite" | "cropped" | "raw";
       if (compositeBlob) {
         uploadBlob = compositeBlob;
+        uploadSource = "composite";
       } else if (croppedBlob) {
         uploadBlob = croppedBlob;
+        uploadSource = "cropped";
       } else if (selectedImage) {
         uploadBlob = selectedImage;
+        uploadSource = "raw";
       } else {
         throw new Error("No image available");
       }
+      console.info(
+        `[upload-outfit] source=${uploadSource} bytes=${uploadBlob.size}`
+      );
 
       const urlRes = await fetch("/api/uploads/request-url", {
         method: "POST",

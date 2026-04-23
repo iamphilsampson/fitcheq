@@ -373,6 +373,7 @@ Return ONLY a valid JSON array, no additional text. Example:
       res.setHeader("Content-Type", "image/png");
       res.setHeader("Cache-Control", "no-store");
       const buffer = await imageResponse.arrayBuffer();
+      console.info(`[bg-remove] returned PNG bytes=${buffer.byteLength} from ${parsedUrl.hostname}`);
       res.end(Buffer.from(buffer));
     } catch (error) {
       console.error("[bg-remove] Error:", error);

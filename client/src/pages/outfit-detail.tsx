@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, type BgRemovalProgress } from "@/lib/imageUtils";
+import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, measureCutoutTransparency, CutoutNotTransparentError, type BgRemovalProgress } from "@/lib/imageUtils";
 import { Progress } from "@/components/ui/progress";
 import type { Outfit, Item } from "@shared/schema";
 
@@ -200,13 +200,26 @@ export default function OutfitDetail() {
         if (bgRemovalActiveRef.current) setBgProgress(p);
       });
       if (!bgRemovalActiveRef.current) return; // user exited the flow
+      const transparentRatio = await measureCutoutTransparency(cutout);
+      console.info(`[bg-removal] transparentRatio=${transparentRatio.toFixed(3)}`);
+      if (transparentRatio < 0.05) {
+        throw new CutoutNotTransparentError(transparentRatio);
+      }
       setCutoutBlob(cutout);
       setIsRemoveBgStep(false);
       setIsBgPickerMode(true);
       setSelectedBg(0);
-    } catch {
+    } catch (err) {
       if (!bgRemovalActiveRef.current) return; // stale error, flow already reset
-      toast({ title: "Background removal failed", description: "Try again or skip to upload as-is", variant: "destructive" });
+      if (err instanceof CutoutNotTransparentError) {
+        toast({
+          title: "Couldn't isolate the subject",
+          description: "Background removal didn't find a clear person — try a different photo or skip to upload as-is.",
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Background removal failed", description: "Try again or skip to upload as-is", variant: "destructive" });
+      }
     } finally {
       setIsRemovingBg(false);
       setBgProgress(null);
@@ -256,13 +269,26 @@ export default function OutfitDetail() {
         if (bgRemovalActiveRef.current) setBgProgress(p);
       });
       if (!bgRemovalActiveRef.current) return; // user exited the flow
+      const transparentRatio = await measureCutoutTransparency(cutout);
+      console.info(`[bg-removal] transparentRatio=${transparentRatio.toFixed(3)}`);
+      if (transparentRatio < 0.05) {
+        throw new CutoutNotTransparentError(transparentRatio);
+      }
       setCutoutBlob(cutout);
       setIsRemoveBgStep(false);
       setIsBgPickerMode(true);
       setSelectedBg(0);
-    } catch {
+    } catch (err) {
       if (!bgRemovalActiveRef.current) return; // stale error, flow already reset
-      toast({ title: "Background removal failed", description: "Try again", variant: "destructive" });
+      if (err instanceof CutoutNotTransparentError) {
+        toast({
+          title: "Couldn't isolate the subject",
+          description: "Background removal didn't find a clear person in this photo. Try replacing the photo instead.",
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Background removal failed", description: "Try again", variant: "destructive" });
+      }
       resetPhotoEditState();
     } finally {
       setIsRemovingBg(false);

@@ -108,6 +108,49 @@ export class BgRemovalTimeoutError extends Error {
   }
 }
 
+export class CutoutNotTransparentError extends Error {
+  readonly isNotTransparent = true;
+  constructor(public readonly transparentRatio: number) {
+    super(
+      `Cutout has no transparent area (${(transparentRatio * 100).toFixed(1)}% transparent pixels)`
+    );
+    this.name = "CutoutNotTransparentError";
+  }
+}
+
+/**
+ * Sample a cutout PNG and return the fraction of pixels with alpha < 250.
+ * Used to detect a "failed" segmentation that returned the source image
+ * with no real transparency. Sampling on a 64×64 canvas keeps this cheap.
+ */
+export async function measureCutoutTransparency(blob: Blob): Promise<number> {
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error("Image load failed"));
+      i.src = url;
+    });
+    const SAMPLE = 64;
+    const canvas = document.createElement("canvas");
+    canvas.width = SAMPLE;
+    canvas.height = SAMPLE;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+    ctx.clearRect(0, 0, SAMPLE, SAMPLE);
+    ctx.drawImage(img, 0, 0, SAMPLE, SAMPLE);
+    const data = ctx.getImageData(0, 0, SAMPLE, SAMPLE).data;
+    let transparent = 0;
+    const total = SAMPLE * SAMPLE;
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i] < 250) transparent++;
+    }
+    return transparent / total;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 async function removeBgISNet(
   blob: Blob,
   onProgress?: (p: BgRemovalProgress) => void
@@ -183,15 +226,27 @@ export async function removeBgFromBlob(
   blob: Blob,
   onProgress?: (p: BgRemovalProgress) => void
 ): Promise<Blob> {
+  let result: Blob;
+  let path: "server-birefnet" | "client-isnet";
   try {
-    return await removeBgServerSide(blob, onProgress);
+    result = await removeBgServerSide(blob, onProgress);
+    path = "server-birefnet";
   } catch (err) {
     if (err instanceof BgRemovalTimeoutError) {
       throw err;
     }
     console.warn("[bg-removal] Server-side BiRefNet failed, falling back to ISNet:", err);
-    return removeBgISNet(blob, onProgress);
+    result = await removeBgISNet(blob, onProgress);
+    path = "client-isnet";
   }
+  // Diagnostic: which path ran and how the cutout compares to the source.
+  // A near-equal output size is a strong hint the segmenter didn't actually
+  // remove anything (and we'd produce a misleading composite if we ignored it).
+  const ratio = blob.size > 0 ? (result.size / blob.size).toFixed(2) : "?";
+  console.info(
+    `[bg-removal] path=${path} sourceBytes=${blob.size} cutoutBytes=${result.size} sizeRatio=${ratio}`
+  );
+  return result;
 }
 
 export function compositeOnBackground(
