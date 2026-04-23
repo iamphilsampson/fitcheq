@@ -34,11 +34,23 @@ We swapped ISNet for MediaPipe Selfie Segmentation without the user being able t
 3. If MediaPipe wins, swap. If it doesn't, try BiRefNet (paid API) instead.
 → Task #14 exists if MediaPipe turns out to be insufficient.
 
+### Keep old solutions alive — don't delete them
+When replacing a working solution, **never delete the old implementation outright.** Keep it as a named fallback so that:
+- Reverting is one line of code, not a git archaeology exercise.
+- The new solution can fail gracefully into the old one rather than breaking entirely.
+- The user never loses ground; they may get the old quality but they always get *something*.
+
+**Pattern:** new primary → try/catch → old fallback. Concretely: `removeBgFromBlob` tries MediaPipe first; if it errors (WebGL unavailable, model load failure, etc.) it silently retries with ISNet. The user still gets a result. If MediaPipe consistently disappoints, the primary can be swapped in one line without touching any call sites.
+
+**What to keep:**
+- The old function body as a private/unexported helper (e.g. `removeBgISNet` in `imageUtils.ts`)
+- A brief comment marking it as the previous approach so it isn't deleted by accident
+
 ### Task sizing
 Keep each task small and testable. If a task has an uncertain step, split it so the uncertain part can be POC'd first.
 
 ### Deployment
-The app is deployed at checkitfitcheckit.replit.app. After significant changes, consider suggesting a re-deploy so the user can test on their real device/network.
+The app is deployed at **checkitfitcheckit.replit.app**. After significant changes, suggest a re-deploy so the user can test on their real device and network. Production logs are available via the deployment log tool if something breaks on the live app.
 
 ## System Architecture
 

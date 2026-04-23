@@ -98,12 +98,41 @@ export type BgRemovalProgress = {
   percent: number;
 };
 
+async function removeBgISNet(
+  blob: Blob,
+  onProgress?: (p: BgRemovalProgress) => void
+): Promise<Blob> {
+  const { removeBackground } = await import("@imgly/background-removal");
+  return removeBackground(blob, {
+    model: "isnet",
+    output: { format: "image/png" },
+    progress: onProgress
+      ? (key: string, current: number, total: number) => {
+          if (!total) return;
+          const phase: BgRemovalProgress["phase"] = key.startsWith("fetch")
+            ? "download"
+            : "process";
+          const percent = Math.max(
+            0,
+            Math.min(100, Math.round((current / total) * 100))
+          );
+          onProgress({ phase, percent });
+        }
+      : undefined,
+  });
+}
+
 export async function removeBgFromBlob(
   blob: Blob,
   onProgress?: (p: BgRemovalProgress) => void
 ): Promise<Blob> {
-  const { removeBgMediaPipe } = await import("./selfieSegmentation");
-  return removeBgMediaPipe(blob, onProgress);
+  try {
+    const { removeBgMediaPipe } = await import("./selfieSegmentation");
+    return await removeBgMediaPipe(blob, onProgress);
+  } catch {
+    console.warn("[bg-removal] MediaPipe failed, falling back to ISNet");
+    return removeBgISNet(blob, onProgress);
+  }
 }
 
 export function compositeOnBackground(
