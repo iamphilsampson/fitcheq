@@ -27,7 +27,12 @@ async function getSegmenter(
 
     onProgress?.({ phase: "download", percent: 40 });
 
-    await seg.initialize();
+    try {
+      await seg.initialize();
+    } catch (err) {
+      initPromise = null;
+      throw err;
+    }
 
     onProgress?.({ phase: "download", percent: 100 });
 
@@ -66,8 +71,9 @@ export async function removeBgMediaPipe(
 
   onProgress?.({ phase: "process", percent: 30 });
 
-  const MAX_DIM = 2400;
-  const scale = Math.min(1, MAX_DIM / img.naturalWidth, MAX_DIM / img.naturalHeight);
+  const MAX_W = 2400;
+  const MAX_H = 3200;
+  const scale = Math.min(1, MAX_W / img.naturalWidth, MAX_H / img.naturalHeight);
   const outW = Math.round(img.naturalWidth * scale);
   const outH = Math.round(img.naturalHeight * scale);
 
