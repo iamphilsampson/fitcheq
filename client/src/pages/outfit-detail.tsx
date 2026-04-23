@@ -212,6 +212,13 @@ export default function OutfitDetail() {
           originalUploadFailed = true;
           console.warn("[upload-outfit-patch] failed to upload original photo:", origErr);
         }
+        // If we tried to capture a new original but couldn't, the previously-
+        // stored original belongs to the *old* fullImage and is now stale.
+        // Clear it so the toggle disappears rather than showing an unrelated
+        // photo from the previous outfit state.
+        if (originalUploadFailed) {
+          patchBody.originalImageUrl = null;
+        }
       } else if (source === "raw") {
         // Replacing with a raw/skip photo — the new fullImage IS the original,
         // so any previously-stored original is no longer meaningful.
