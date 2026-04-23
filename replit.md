@@ -10,6 +10,36 @@ Authentication is handled via Replit Auth (OpenID Connect), which supports Googl
 
 Preferred communication style: Simple, everyday language.
 
+## Ways of Working
+
+### POC-first for uncertain changes
+Before implementing any change where the **outcome is uncertain** — especially quality, perception, or "will this actually be better?" — propose a lightweight proof-of-concept (POC) first rather than swapping the production code. The user should be able to see the result and decide before committing.
+
+**What triggers a POC:**
+- ML model or AI approach changes (e.g. background removal model swaps)
+- Quality-sensitive features (image processing, rendering)
+- Major UX changes or new layouts where visual outcome is unpredictable
+- Anything where "it might be worse" is a real risk
+
+**What a POC looks like (ordered by effort):**
+1. **Side-by-side comparison tool** — a temporary debug page or route (e.g. `/debug/compare-bg`) that runs BOTH approaches on the same input and shows the outputs side-by-side. User picks the winner; we then swap in production.
+2. **Canvas mockup** — for visual/layout changes, sketch the concept on the Canvas board before touching the live codebase.
+3. **Feature flag / URL param** — add `?model=legacy` or similar so the user can toggle between approaches in the running app on real data.
+4. **Documented trade-off note in chat** — when a full POC isn't practical, write a clear table of trade-offs (quality / speed / cost / risk) and let the user decide before any code is written.
+
+**Case study — background removal (Task #12):**
+We swapped ISNet for MediaPipe Selfie Segmentation without the user being able to compare the two on their own photos first. The right approach would have been:
+1. Build a temporary `/debug/compare-bg` page that accepts a photo and shows ISNet output vs MediaPipe output side-by-side.
+2. User tests on a mirror selfie (the known hard case).
+3. If MediaPipe wins, swap. If it doesn't, try BiRefNet (paid API) instead.
+→ Task #14 exists if MediaPipe turns out to be insufficient.
+
+### Task sizing
+Keep each task small and testable. If a task has an uncertain step, split it so the uncertain part can be POC'd first.
+
+### Deployment
+The app is deployed at checkitfitcheckit.replit.app. After significant changes, consider suggesting a re-deploy so the user can test on their real device/network.
+
 ## System Architecture
 
 ### Frontend Architecture
