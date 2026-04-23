@@ -342,8 +342,29 @@ Return ONLY a valid JSON array, no additional text. Example:
         { input: { image: imageData } }
       );
 
-      // output is a URL string pointing to the result PNG
-      const resultUrl = typeof output === "string" ? output : String(output);
+      // Extract URL from Replicate output — may be a string, FileOutput (toString → URL),
+      // or an array of these (some models); always take the first item.
+      function extractReplicateUrl(val: unknown): string {
+        if (Array.isArray(val)) return extractReplicateUrl(val[0]);
+        if (typeof val === "string") return val;
+        return String(val); // FileOutput.toString() returns the URL
+      }
+      const resultUrl = extractReplicateUrl(output);
+
+      // Validate the URL is an HTTPS Replicate delivery URL before fetching
+      let parsedUrl: URL;
+      try { parsedUrl = new URL(resultUrl); } catch {
+        throw new Error(`Invalid URL received from Replicate: ${resultUrl}`);
+      }
+      if (parsedUrl.protocol !== "https:") {
+        throw new Error(`Non-HTTPS URL received from Replicate: ${resultUrl}`);
+      }
+      const allowedHosts = ["replicate.delivery", "replicate.com"];
+      const isAllowed = allowedHosts.some(h => parsedUrl.hostname === h || parsedUrl.hostname.endsWith(`.${h}`));
+      if (!isAllowed) {
+        throw new Error(`Unexpected host in Replicate output URL: ${parsedUrl.hostname}`);
+      }
+
       const imageResponse = await fetch(resultUrl);
       if (!imageResponse.ok) {
         throw new Error(`Failed to fetch result from Replicate: ${imageResponse.status}`);
