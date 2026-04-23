@@ -56,7 +56,9 @@ function updateUserSession(
 ) {
   user.claims = tokens.claims() as Express.User["claims"];
   user.access_token = tokens.access_token;
-  user.refresh_token = tokens.refresh_token;
+  if (tokens.refresh_token) {
+    user.refresh_token = tokens.refresh_token;
+  }
   user.expires_at = user.claims?.exp;
 }
 
@@ -185,7 +187,10 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
     const config = await getOidcConfig();
     const tokenResponse = await client.refreshTokenGrant(config, refreshToken);
     updateUserSession(user, tokenResponse);
-    return next();
+    req.session.save((err) => {
+      if (err) console.error("[auth] Session save after token refresh failed:", err);
+      next();
+    });
   } catch (error) {
     res.status(401).json({ message: "Unauthorized" });
     return;
