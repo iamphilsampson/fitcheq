@@ -18,6 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { getColorSwatch } from "@/lib/colorMap";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Item, DetectedItem, Outfit } from "@shared/schema";
 
@@ -261,9 +262,37 @@ function SearchInput({
               }}
               data-testid={`suggestion-${item.id}-slot-${index}`}
             >
-              <div className="w-6 h-6 rounded bg-muted flex items-center justify-center flex-shrink-0">
-                <Shirt className="h-3 w-3 text-muted-foreground" />
-              </div>
+              {(() => {
+                const swatch = getColorSwatch(item.color);
+                if (swatch.kind === "solid") {
+                  return (
+                    <div
+                      className="w-6 h-6 rounded flex-shrink-0"
+                      style={{
+                        backgroundColor: swatch.hex,
+                        border: swatch.needsBorder ? "1px solid hsl(var(--border))" : undefined,
+                      }}
+                    />
+                  );
+                }
+                if (swatch.kind === "pattern") {
+                  const bg =
+                    swatch.pattern === "stripes"
+                      ? "repeating-linear-gradient(45deg, #888 0px, #888 2px, #ccc 2px, #ccc 6px)"
+                      : "conic-gradient(#888 90deg, #ccc 90deg 180deg, #888 180deg 270deg, #ccc 270deg)";
+                  return (
+                    <div
+                      className="w-6 h-6 rounded flex-shrink-0 border border-border/40"
+                      style={{ backgroundImage: bg, backgroundSize: swatch.pattern === "stripes" ? undefined : "8px 8px" }}
+                    />
+                  );
+                }
+                return (
+                  <div className="w-6 h-6 rounded bg-muted flex items-center justify-center flex-shrink-0">
+                    <Shirt className="h-3 w-3 text-muted-foreground" />
+                  </div>
+                );
+              })()}
               <div className="min-w-0 flex-1">
                 <span className="text-xs font-medium">{item.subCategory || item.category}</span>
                 {(item.color || item.brand) && (
