@@ -141,9 +141,9 @@ export default function OutfitDetail() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
-  const uploadBlobAndPatch = useCallback(async (blob: Blob) => {
+  const uploadBlobAndPatch = useCallback(async (blob: Blob, source: "composite" | "raw" = "raw") => {
     setIsReuploading(true);
-    console.info(`[upload-outfit-patch] outfitId=${outfitId} bytes=${blob.size}`);
+    console.info(`[upload-outfit-patch] outfitId=${outfitId} source=${source} bytes=${blob.size}`);
     try {
       const urlRes = await fetch("/api/uploads/request-url", {
         method: "POST",
@@ -232,7 +232,7 @@ export default function OutfitDetail() {
     if (isCurrentPhotoBgFlow) {
       resetPhotoEditState();
     } else if (selectedFileBlob) {
-      uploadBlobAndPatch(selectedFileBlob);
+      uploadBlobAndPatch(selectedFileBlob, "raw");
     }
   };
 
@@ -243,7 +243,7 @@ export default function OutfitDetail() {
     try {
       const blob = await compositeOnBackground(cutoutBlob, selectedBg);
       setIsCompositing(false); // switch button to "Uploading..." state
-      await uploadBlobAndPatch(blob);
+      await uploadBlobAndPatch(blob, "composite");
     } catch (err) {
       if (err instanceof CutoutNotTransparentError) {
         toast({
