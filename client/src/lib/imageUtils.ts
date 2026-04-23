@@ -258,7 +258,7 @@ export async function compositeOnBackground(
   // Defense-in-depth: refuse to composite an essentially-opaque cutout.
   // Without this, callers that bypass the call-site guard would still
   // produce a misleading composite where the chosen background is fully
-  // covered by the original photo (Task #20 root cause).
+  // covered by the original photo.
   const transparentRatio = await measureCutoutTransparency(cutoutBlob);
   console.info(
     `[composite] transparentRatio=${transparentRatio.toFixed(3)} bgIndex=${bgIndex}`
