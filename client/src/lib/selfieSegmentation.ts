@@ -1,3 +1,6 @@
+// MediaPipe Selfie Segmentation — kept as optional fallback.
+// Currently bypassed in favour of the server-side BiRefNet + ISNet chain.
+// To reinstate: call removeBgMediaPipe() from imageUtils.ts removeBgFromBlob().
 import type { SelfieSegmentation as SelfieSegmentationType, Results, InputMap } from "@mediapipe/selfie_segmentation";
 import type { BgRemovalProgress } from "./imageUtils";
 

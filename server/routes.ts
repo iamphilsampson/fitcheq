@@ -318,5 +318,46 @@ Return ONLY a valid JSON array, no additional text. Example:
     }
   });
 
+  // Background removal via BiRefNet portrait on Replicate
+  // Falls back gracefully to client-side ISNet if this endpoint is unavailable
+  app.post("/api/bg-remove", isAuthenticated, async (req, res) => {
+    try {
+      const apiKey = process.env.REPLICATE_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ error: "REPLICATE_API_KEY not configured" });
+      }
+
+      const { imageData } = req.body as { imageData?: string };
+      if (!imageData || typeof imageData !== "string") {
+        return res.status(400).json({ error: "imageData (base64 data URI) is required" });
+      }
+
+      const Replicate = (await import("replicate")).default;
+      const replicate = new Replicate({ auth: apiKey });
+
+      // BiRefNet portrait — purpose-built for human/person segmentation
+      // Version pinned for reproducibility: https://replicate.com/lucataco/birefnet-portrait
+      const output = await replicate.run(
+        "lucataco/birefnet-portrait:9d17a74b578b231c7bf8fd1f66f93e72f90c6e0fe19c1fb8ee4df3b5c72a5012",
+        { input: { image: imageData } }
+      );
+
+      // output is a URL string pointing to the result PNG
+      const resultUrl = typeof output === "string" ? output : String(output);
+      const imageResponse = await fetch(resultUrl);
+      if (!imageResponse.ok) {
+        throw new Error(`Failed to fetch result from Replicate: ${imageResponse.status}`);
+      }
+
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "no-store");
+      const buffer = await imageResponse.arrayBuffer();
+      res.end(Buffer.from(buffer));
+    } catch (error) {
+      console.error("[bg-remove] Error:", error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "Background removal failed" });
+    }
+  });
+
   return httpServer;
 }

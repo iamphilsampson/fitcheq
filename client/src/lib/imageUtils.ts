@@ -122,15 +122,50 @@ async function removeBgISNet(
   });
 }
 
+function blobToBase64DataUri(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function removeBgServerSide(
+  blob: Blob,
+  onProgress?: (p: BgRemovalProgress) => void
+): Promise<Blob> {
+  onProgress?.({ phase: "process", percent: 10 });
+
+  const imageData = await blobToBase64DataUri(blob);
+
+  onProgress?.({ phase: "process", percent: 20 });
+
+  const res = await fetch("/api/bg-remove", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ imageData }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(`bg-remove API error ${res.status}: ${err.error}`);
+  }
+
+  onProgress?.({ phase: "process", percent: 90 });
+  const result = await res.blob();
+  onProgress?.({ phase: "process", percent: 100 });
+  return result;
+}
+
 export async function removeBgFromBlob(
   blob: Blob,
   onProgress?: (p: BgRemovalProgress) => void
 ): Promise<Blob> {
   try {
-    const { removeBgMediaPipe } = await import("./selfieSegmentation");
-    return await removeBgMediaPipe(blob, onProgress);
-  } catch {
-    console.warn("[bg-removal] MediaPipe failed, falling back to ISNet");
+    return await removeBgServerSide(blob, onProgress);
+  } catch (err) {
+    console.warn("[bg-removal] Server-side BiRefNet failed, falling back to ISNet:", err);
     return removeBgISNet(blob, onProgress);
   }
 }
