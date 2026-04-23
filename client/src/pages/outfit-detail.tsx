@@ -143,6 +143,7 @@ export default function OutfitDetail() {
 
   const uploadBlobAndPatch = useCallback(async (blob: Blob) => {
     setIsReuploading(true);
+    console.info(`[upload-outfit-patch] outfitId=${outfitId} bytes=${blob.size}`);
     try {
       const urlRes = await fetch("/api/uploads/request-url", {
         method: "POST",
@@ -243,8 +244,17 @@ export default function OutfitDetail() {
       const blob = await compositeOnBackground(cutoutBlob, selectedBg);
       setIsCompositing(false); // switch button to "Uploading..." state
       await uploadBlobAndPatch(blob);
-    } catch {
-      toast({ title: "Failed to compose image", variant: "destructive" });
+    } catch (err) {
+      if (err instanceof CutoutNotTransparentError) {
+        toast({
+          title: "Couldn't isolate the subject",
+          description: "Background removal didn't find a clear person — try a different photo or cancel.",
+          variant: "destructive",
+        });
+        resetPhotoEditState();
+      } else {
+        toast({ title: "Failed to compose image", variant: "destructive" });
+      }
       setIsCompositing(false);
     }
   };

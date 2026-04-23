@@ -251,8 +251,20 @@ export default function AddOutfit() {
       setImagePreview(URL.createObjectURL(blob));
       setIsBgPickerMode(false);
       setCutoutBlob(null);
-    } catch {
-      toast({ title: "Failed to compose image", variant: "destructive" });
+    } catch (err) {
+      if (err instanceof CutoutNotTransparentError) {
+        toast({
+          title: "Couldn't isolate the subject",
+          description: "Background removal didn't find a clear person — try a different photo or skip to upload as-is.",
+          variant: "destructive",
+        });
+        // Bounce back to the remove-bg step so the user can retry or skip.
+        setIsBgPickerMode(false);
+        setCutoutBlob(null);
+        setIsRemoveBgStep(true);
+      } else {
+        toast({ title: "Failed to compose image", variant: "destructive" });
+      }
     } finally {
       setIsCompositing(false);
     }
