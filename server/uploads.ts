@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { isAuthenticated } from "./auth";
 import { randomUUID } from "crypto";
 import { createReadStream, createWriteStream } from "fs";
-import { mkdir, stat, open } from "fs/promises";
+import { mkdir, stat, open, readdir, copyFile, access } from "fs/promises";
 import path from "path";
 
 /**
@@ -29,6 +29,33 @@ const SAFE_ID = /^[A-Za-z0-9_-]+$/; // UUIDs only; blocks path traversal
 
 async function ensureDir() {
   await mkdir(UPLOAD_DIR, { recursive: true });
+}
+
+/**
+ * Seed the upload folder from the committed export/photos/ on boot. Idempotent:
+ * only copies files that aren't already present, so it safely populates an empty
+ * Railway volume on first deploy and is a no-op thereafter (and locally).
+ */
+export async function seedUploadsFromExport(): Promise<void> {
+  const seedDir = path.resolve(process.cwd(), "export", "photos");
+  let files: string[];
+  try {
+    files = await readdir(seedDir);
+  } catch {
+    return; // no seed directory (e.g. export/ not shipped) — nothing to do
+  }
+  await ensureDir();
+  let copied = 0;
+  for (const name of files) {
+    const dest = path.join(UPLOAD_DIR, name);
+    try {
+      await access(dest); // already there
+    } catch {
+      await copyFile(path.join(seedDir, name), dest);
+      copied++;
+    }
+  }
+  if (copied) console.log(`[uploads] seeded ${copied} photo(s) into ${UPLOAD_DIR}`);
 }
 
 // Detect image content type from magic bytes (files are stored without an

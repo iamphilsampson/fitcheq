@@ -4,6 +4,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { setupAuth } from "./auth";
+import { seedUploadsFromExport } from "./uploads";
 
 const app = express();
 const httpServer = createServer(app);
@@ -63,6 +64,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Seed the photo volume from export/photos on first boot (idempotent).
+  await seedUploadsFromExport();
+
   // Setup auth BEFORE registering other routes
   await setupAuth(app);
 
