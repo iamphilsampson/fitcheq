@@ -3,4 +3,10 @@ dist
 .DS_Store
 server/public
 vite.config.ts.*
-*.tar.gzexport/photos.zip
+*.tar.gz
+export/photos.zip
+
+# Local env + runtime uploads (photos are seeded from export/photos on deploy)
+.env
+.env.local
+uploads

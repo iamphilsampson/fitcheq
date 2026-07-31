@@ -1,16 +1,15 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
-import { registerAuthRoutes, isAuthenticated, registerOrphanClaimFn } from "./replit_integrations/auth";
+import { registerObjectStorageRoutes } from "./uploads";
+import { registerAuthRoutes, isAuthenticated, registerOrphanClaimFn } from "./auth";
 import { insertItemSchema, insertOutfitSchema, detectedItemSchema } from "@shared/schema";
 import { z } from "zod";
 import OpenAI from "openai";
 import "./replit_integrations/auth/types"; // Import Express.User type augmentation
 
 const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 // Helper to get userId from request (Replit Auth — only call after isAuthenticated middleware)
@@ -151,13 +150,13 @@ export async function registerRoutes(
         userId,
       });
 
-      // Build the full image URL for OpenAI
-      const baseUrl = process.env.REPL_SLUG 
-        ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER?.toLowerCase()}.repl.co`
-        : `http://localhost:5000`;
-      
-      const fullImageUrl = imageUrl.startsWith("http") 
-        ? imageUrl 
+      // Build the full image URL for OpenAI to fetch. Must be publicly
+      // reachable, so this feature only works when deployed with a public URL
+      // (set APP_BASE_URL on Railway) — not on localhost.
+      const baseUrl = process.env.APP_BASE_URL || `${req.protocol}://${req.get("host")}`;
+
+      const fullImageUrl = imageUrl.startsWith("http")
+        ? imageUrl
         : `${baseUrl}${imageUrl}`;
 
       // Analyze the image with GPT-4o Vision

@@ -559,7 +559,7 @@ export default function AddOutfit() {
           <div className="space-y-3 pt-2">
             <Button
               className="w-full gap-2"
-              onClick={() => { window.location.href = "/api/login"; }}
+              onClick={() => { window.location.reload(); }}
               data-testid="button-sign-in-prompt"
             >
               <LogIn className="h-4 w-4" />

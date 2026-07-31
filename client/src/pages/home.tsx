@@ -232,7 +232,7 @@ export default function Home() {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => { window.location.href = "/api/login"; }}
+                onClick={() => { window.location.reload(); }}
                 data-testid="button-sign-in"
               >
                 <LogIn className="h-4 w-4" />
