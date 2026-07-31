@@ -335,10 +335,11 @@ Return ONLY a valid JSON array, no additional text. Example:
       const Replicate = (await import("replicate")).default;
       const replicate = new Replicate({ auth: apiKey });
 
-      // BiRefNet portrait — purpose-built for human/person segmentation
-      // Version pinned for reproducibility: https://replicate.com/lucataco/birefnet-portrait
+      // rembg — reliable background removal model on Replicate.
+      // Previously used lucataco/birefnet-portrait but that model was removed.
+      // Pinned version for reproducibility: https://replicate.com/cjwbw/rembg
       const output = await replicate.run(
-        "lucataco/birefnet-portrait:9d17a74b578b231c7bf8fd1f66f93e72f90c6e0fe19c1fb8ee4df3b5c72a5012",
+        "cjwbw/rembg:fb8af171cfa1616ddcf1242c093f9c46bcada5ad4cf6f2fbe8b81b330ec5c003",
         { input: { image: imageData } }
       );
 

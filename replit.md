@@ -28,7 +28,7 @@ Before implementing any change where the **outcome is uncertain** — especially
 4. **Documented trade-off note in chat** — when a full POC isn't practical, write a clear table of trade-offs (quality / speed / cost / risk) and let the user decide before any code is written.
 
 **Background removal current state (Tasks #12, #15):**
-Primary: server-side BiRefNet portrait via Replicate (`lucataco/birefnet-portrait`, version pinned). Fallback: ISNet (`@imgly/background-removal`, client-side WASM). MediaPipe is kept in `selfieSegmentation.ts` but bypassed. See `BACKGROUND_REMOVAL.md` for full history.
+Primary: server-side rembg via Replicate (`cjwbw/rembg`, version pinned). Fallback: ISNet (`@imgly/background-removal`, client-side WASM). MediaPipe is kept in `selfieSegmentation.ts` but bypassed. `lucataco/birefnet-portrait` was removed from Replicate ~May 2026. See `BACKGROUND_REMOVAL.md` for full history.
 
 **Case study — background removal (Task #12):**
 We swapped ISNet for MediaPipe Selfie Segmentation without the user being able to compare the two on their own photos first. The right approach would have been:

@@ -641,11 +641,11 @@ export default function Reconcile() {
             onClick={() => setImagePreviewOpen(true)}
             data-testid="card-outfit-preview"
           >
-            <div className="bg-muted max-h-48 overflow-hidden flex items-center justify-center">
+            <div className="bg-muted overflow-hidden">
               <img
                 src={outfit.fullImageUrl}
                 alt="Outfit"
-                className="w-full object-contain max-h-48"
+                className="w-full h-auto max-h-72 object-contain block"
               />
             </div>
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">

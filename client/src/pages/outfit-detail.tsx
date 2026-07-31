@@ -596,11 +596,11 @@ export default function OutfitDetail() {
             // Remove background choice
             <div className="space-y-4">
               <Card className="overflow-hidden">
-                <div className="aspect-[3/4] bg-muted">
+                <div className="bg-muted">
                   <img
                     src={selectedFilePreview || ""}
                     alt="Your photo"
-                    className="w-full h-full object-cover"
+                    className="w-full h-auto max-h-[60vh] object-contain block"
                   />
                 </div>
               </Card>
@@ -682,51 +682,25 @@ export default function OutfitDetail() {
               onTouchEnd={handleTouchEnd}
               data-testid="photo-swipe-area"
             >
-              <div className="aspect-[3/4]">
-                {isReuploading ? (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  </div>
-                ) : (
-                  <img
-                    src={viewingOriginal && outfit.originalImageUrl ? outfit.originalImageUrl : outfit.fullImageUrl}
-                    alt={`Outfit from ${outfit.dateWorn}${viewingOriginal ? " (original)" : ""}`}
-                    className="w-full h-full object-cover"
-                    data-testid="outfit-photo"
-                  />
-                )}
-              </div>
-
-              {/* Subtle "View original" toggle — only shown when an original
-                  was stored (composite outfits). Sits in the top-right of the
-                  photo, with a muted "Original" pill on the top-left while
-                  showing the original. Kept low-key per the spec. */}
-              {!isReuploading && outfit.originalImageUrl && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setViewingOriginal((v) => !v)}
-                    className="absolute top-2 right-2 rounded-full bg-black/40 hover:bg-black/55 backdrop-blur-sm p-1.5 text-white transition-colors"
-                    aria-label={viewingOriginal ? "Show edited photo" : "Show original photo"}
-                    aria-pressed={viewingOriginal}
-                    data-testid="button-toggle-original"
-                  >
-                    <History className="h-4 w-4" />
-                  </button>
-                  {viewingOriginal && (
-                    <span
-                      className="absolute top-2 left-2 rounded-full bg-black/40 backdrop-blur-sm px-2 py-0.5 text-[11px] font-medium tracking-wide text-white uppercase"
-                      data-testid="badge-original"
-                    >
-                      Original
-                    </span>
-                  )}
-                </>
+              {isReuploading ? (
+                <div className="flex items-center justify-center" style={{ minHeight: "50vh" }}>
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              ) : (
+                <img
+                  src={viewingOriginal && outfit.originalImageUrl ? outfit.originalImageUrl : outfit.fullImageUrl}
+                  alt={`Outfit from ${outfit.dateWorn}${viewingOriginal ? " (original)" : ""}`}
+                  className="w-full h-auto block"
+                  data-testid="outfit-photo"
+                />
               )}
 
+              {/* Prev/next side-edge nav buttons. Their click targets start
+                  below the top corner zone (top-12) so they don't overlap the
+                  History toggle / Original pill that sit at top-2. */}
               {prevId && (
                 <button
-                  className="absolute left-0 top-0 h-full w-14 flex items-center justify-start pl-1 opacity-0 active:opacity-100 focus:opacity-100"
+                  className="absolute left-0 top-12 bottom-0 w-14 flex items-center justify-start pl-1 opacity-0 active:opacity-100 focus:opacity-100"
                   onClick={() => goToOutfit(prevId)}
                   aria-label="Previous outfit"
                   data-testid="button-prev-outfit"
@@ -739,7 +713,7 @@ export default function OutfitDetail() {
 
               {nextId && (
                 <button
-                  className="absolute right-0 top-0 h-full w-14 flex items-center justify-end pr-1 opacity-0 active:opacity-100 focus:opacity-100"
+                  className="absolute right-0 top-12 bottom-0 w-14 flex items-center justify-end pr-1 opacity-0 active:opacity-100 focus:opacity-100"
                   onClick={() => goToOutfit(nextId)}
                   aria-label="Next outfit"
                   data-testid="button-next-outfit"
@@ -748,6 +722,39 @@ export default function OutfitDetail() {
                     <ChevronRight className="h-5 w-5 text-white" />
                   </span>
                 </button>
+              )}
+
+              {/* Subtle "View original" toggle — only shown when an original
+                  was stored (composite outfits). Sits in the top-right of the
+                  photo with z-10 and is rendered AFTER the nav buttons so it
+                  always wins the tap, with a muted "Original" pill on the
+                  top-left while showing the original. */}
+              {!isReuploading && outfit.originalImageUrl && (
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      // Stop the swipe handler on the parent from interpreting
+                      // this as a directional gesture.
+                      e.stopPropagation();
+                      setViewingOriginal((v) => !v);
+                    }}
+                    className="absolute top-2 right-2 z-10 rounded-full bg-black/40 hover:bg-black/55 backdrop-blur-sm p-1.5 text-white transition-colors"
+                    aria-label={viewingOriginal ? "Show edited photo" : "Show original photo"}
+                    aria-pressed={viewingOriginal}
+                    data-testid="button-toggle-original"
+                  >
+                    <History className="h-4 w-4" />
+                  </button>
+                  {viewingOriginal && (
+                    <span
+                      className="absolute top-2 left-2 z-10 pointer-events-none rounded-full bg-black/40 backdrop-blur-sm px-2 py-0.5 text-[11px] font-medium tracking-wide text-white uppercase"
+                      data-testid="badge-original"
+                    >
+                      Original
+                    </span>
+                  )}
+                </>
               )}
             </div>
 

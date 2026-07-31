@@ -44,3 +44,6 @@ integrations = ["javascript_object_storage:2.0.0", "javascript_database:1.0.0", 
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[objectStorage]
+defaultBucketID = "replit-objstore-c17ffa0b-9af8-4b81-a056-7dcc30a74af9"

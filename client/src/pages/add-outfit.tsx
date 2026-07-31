@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import ReactCrop, { type Crop as CropType } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
-import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, cropImageBlob, measureCutoutTransparency, BgRemovalTimeoutError, CutoutNotTransparentError, type BgRemovalProgress, type CropRect } from "@/lib/imageUtils";
+import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, cropImageBlob, measureCutoutTransparency, BgRemovalTimeoutError, CutoutNotTransparentError, type BgRemovalProgress, type CropRect, type CompositeContext } from "@/lib/imageUtils";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -86,11 +86,13 @@ export default function AddOutfit() {
   const [isCropping, setIsCropping] = useState(false);
   const [croppedPreview, setCroppedPreview] = useState<string | null>(null);
   const [croppedBlob, setCroppedBlob] = useState<Blob | null>(null);
-  // Crop rectangle in original-image pixel coordinates. Used so the
-  // background-removal step can run on the *full* image (max context for the
-  // segmenter) while the final composite/skip output still respects the
-  // user's chosen frame.
+  // Crop rectangle in original-image pixel coordinates.
   const [cropRect, setCropRect] = useState<CropRect | null>(null);
+  // Pixel dimensions of the original (uncropped) source photo. Captured when
+  // the image element fires onLoad in the crop view. Used to size the
+  // composite canvas from the full photo so the background fills the entire
+  // original rectangle — not just the cropped area.
+  const [origDims, setOrigDims] = useState<{ w: number; h: number } | null>(null);
   const [dateWorn, setDateWorn] = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
   const [isUploading, setIsUploading] = useState(false);
@@ -128,23 +130,28 @@ export default function AddOutfit() {
     }
   }, [isAuthenticated]);
 
-  // Preview canvas pixel dimensions follow the crop's aspect ratio so the
-  // user sees the actual final frame, not a stretched 3:4 placeholder.
+  // Preview canvas pixel dimensions follow the ORIGINAL photo's aspect ratio
+  // so the background-picker preview matches the saved output exactly.
+  // Falls back to the crop aspect ratio when origDims isn't captured yet.
   const previewDims = (() => {
     const MAX = 600;
-    if (cropRect && cropRect.w > 0 && cropRect.h > 0) {
-      const longest = Math.max(cropRect.w, cropRect.h);
+    const ref = origDims
+      ?? (cropRect && cropRect.w > 0 && cropRect.h > 0 ? { w: cropRect.w, h: cropRect.h } : null);
+    if (ref && ref.w > 0 && ref.h > 0) {
+      const longest = Math.max(ref.w, ref.h);
       const scale = longest > MAX ? MAX / longest : 1;
       return {
-        w: Math.max(1, Math.round(cropRect.w * scale)),
-        h: Math.max(1, Math.round(cropRect.h * scale)),
+        w: Math.max(1, Math.round(ref.w * scale)),
+        h: Math.max(1, Math.round(ref.h * scale)),
       };
     }
     return { w: 300, h: 400 };
   })();
   const previewAspect = `${previewDims.w} / ${previewDims.h}`;
 
-  // Redraw preview canvas whenever selected background changes in bg picker mode
+  // Redraw preview canvas whenever selected background changes in bg picker mode.
+  // Mirrors compositeOnBackground exactly: canvas is the full original photo
+  // rectangle (at preview scale), cutout is placed at the crop offset.
   useEffect(() => {
     if (!isBgPickerMode || !cutoutBlob || !previewCanvasRef.current) return;
     const canvas = previewCanvasRef.current;
@@ -153,29 +160,29 @@ export default function AddOutfit() {
     const url = URL.createObjectURL(cutoutBlob);
     const img = new Image();
     img.onload = () => {
-      if (cropRect && img.naturalWidth > 0 && img.naturalHeight > 0) {
-        // Only safe to draw the crop region if the cutout is at original
-        // image dimensions (it should be — BiRefNet preserves dims). Sanity
-        // check against image natural size to avoid out-of-bounds blanks.
-        const fits =
-          cropRect.x + cropRect.w <= img.naturalWidth &&
-          cropRect.y + cropRect.h <= img.naturalHeight;
-        if (fits) {
-          ctx.drawImage(
-            img,
-            cropRect.x, cropRect.y, cropRect.w, cropRect.h,
-            0, 0, canvas.width, canvas.height
-          );
-        } else {
-          drawCutoutCentered(ctx, img, canvas.width, canvas.height);
-        }
+      if (origDims && origDims.w > 0) {
+        // canvas.width === origDims.w * srcScale (previewDims derived from origDims)
+        const srcScale = canvas.width / origDims.w;
+        const cropW = cropRect?.w ?? origDims.w;
+        const cropH = cropRect?.h ?? origDims.h;
+        const cropX = cropRect?.x ?? 0;
+        const cropY = cropRect?.y ?? 0;
+        // Match compositeOnBackground: cutoutScale = srcScale / cropScale
+        const cropScale = Math.min(1, 2400 / Math.max(cropW, cropH));
+        const cutoutScale = srcScale / cropScale;
+        const cW = Math.max(1, Math.round(img.naturalWidth * cutoutScale));
+        const cH = Math.max(1, Math.round(img.naturalHeight * cutoutScale));
+        const ox = Math.round(cropX * srcScale);
+        const oy = Math.round(cropY * srcScale);
+        ctx.drawImage(img, ox, oy, cW, cH);
       } else {
+        // Fallback for draft-restore path where origDims isn't available.
         drawCutoutCentered(ctx, img, canvas.width, canvas.height);
       }
       URL.revokeObjectURL(url);
     };
     img.src = url;
-  }, [isBgPickerMode, cutoutBlob, selectedBg, cropRect, previewDims.w, previewDims.h]);
+  }, [isBgPickerMode, cutoutBlob, selectedBg, origDims, cropRect, previewDims.w, previewDims.h]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -188,6 +195,7 @@ export default function AddOutfit() {
     setCroppedPreview(null);
     setCroppedBlob(null);
     setCropRect(null);
+    setOrigDims(null);
     setCompositeBlob(null);
     setIsRemoveBgStep(false);
     setIsBgPickerMode(false);
@@ -208,10 +216,15 @@ export default function AddOutfit() {
     } catch { }
   };
 
-  const onImageLoad = useCallback((_e: React.SyntheticEvent<HTMLImageElement>) => {
-    // Free-form crop: default to a centred 90% rectangle that follows the
-    // image's own aspect ratio. The user can drag any edge or corner.
-    setCrop({ unit: "%", x: 5, y: 5, width: 90, height: 90 });
+  const onImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
+    // Capture the original photo dimensions so the composite canvas can be
+    // sized from the full original photo rectangle (not just the crop area).
+    setOrigDims({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight });
+    // Free-form crop: default to a tall, narrow rectangle covering roughly
+    // the centre third of the image. Optimised for full-body standing
+    // portraits where the sides of the photo are usually room/clutter.
+    // The user can drag any edge or corner from there.
+    setCrop({ unit: "%", x: 32.5, y: 2.5, width: 35, height: 95 });
   }, []);
 
   const handleCropDone = async () => {
@@ -224,6 +237,11 @@ export default function AddOutfit() {
       setCropRect(rect);
       setCroppedBlob(blob);
       setCroppedPreview(URL.createObjectURL(blob));
+      // Cutouts are now crop-specific — invalidate any cached cutout/composite
+      // so the BG-removal step re-runs against the new cropped source.
+      setCutoutBlob(null);
+      setCompositeBlob(null);
+      setBgTimedOut(false);
       setIsCropping(false);
       setIsRemoveBgStep(true);
     } catch {
@@ -234,6 +252,9 @@ export default function AddOutfit() {
         setCropRect(rect);
         setCroppedBlob(blob);
         setCroppedPreview(URL.createObjectURL(blob));
+        setCutoutBlob(null);
+        setCompositeBlob(null);
+        setBgTimedOut(false);
         setIsCropping(false);
         setIsRemoveBgStep(true);
       } catch {
@@ -244,7 +265,16 @@ export default function AddOutfit() {
   };
 
   const handleSkipCrop = () => {
+    // Clear any cropped blob so the BG-removal step uses the full original
+    // image (croppedBlob || selectedImage resolves to selectedImage).
+    // Also invalidate any cached cutout/composite — it was crop-specific and
+    // must not be reused for a different source (full image, skip-crop path).
     setCropRect(null);
+    setCroppedBlob(null);
+    setCroppedPreview(null);
+    setCutoutBlob(null);
+    setCompositeBlob(null);
+    setBgTimedOut(false);
     setIsCropping(false);
     setIsRemoveBgStep(true);
   };
@@ -257,11 +287,24 @@ export default function AddOutfit() {
       setSelectedBg(0);
       return;
     }
-    // Send the FULL original image to the segmenter when available, so the
-    // model has maximum context to find the person. We later apply the user's
-    // crop when compositing. Fall back to whatever blob we have (e.g. draft
-    // restore path where selectedImage is null but croppedBlob was rehydrated).
-    const source = selectedImage || croppedBlob;
+    // Use the already-cropped blob when available (cropped path: already 2400-capped).
+    // For the skip-crop path, selectedImage is the raw full-resolution file which
+    // may be much larger than 2400px. Pre-scale it to 2400 max so the cutout
+    // dimensions align with compositeOnBackground's srcScale/cropScale contract —
+    // otherwise the cutout overflows the 2400-capped canvas.
+    let source: Blob | null = croppedBlob;
+    if (!source && selectedImage) {
+      if (origDims && Math.max(origDims.w, origDims.h) > 2400) {
+        source = await cropImageBlob(
+          selectedImage,
+          { x: 0, y: 0, w: origDims.w, h: origDims.h },
+          2400,
+          0.92
+        );
+      } else {
+        source = selectedImage;
+      }
+    }
     if (!source) return;
     setIsRemovingBg(true);
     setBgProgress(null);
@@ -313,9 +356,20 @@ export default function AddOutfit() {
     if (!cutoutBlob) return;
     setIsCompositing(true);
     try {
-      // Pass cropRect so the final composite is sized to the user's chosen
-      // frame. When null (skip-crop path), the legacy 2400×3200 fit applies.
-      const blob = await compositeOnBackground(cutoutBlob, selectedBg, cropRect);
+      // Build context from the original photo dims + crop offset so the canvas
+      // is sized from the full original photo rectangle. Background fills the
+      // entire original photo; the person is placed at their crop position.
+      const context: CompositeContext | undefined = origDims
+        ? {
+            srcW: origDims.w,
+            srcH: origDims.h,
+            cropX: cropRect?.x ?? 0,
+            cropY: cropRect?.y ?? 0,
+            cropW: cropRect?.w ?? origDims.w,
+            cropH: cropRect?.h ?? origDims.h,
+          }
+        : undefined;
+      const blob = await compositeOnBackground(cutoutBlob, selectedBg, context);
       setCompositeBlob(blob);
       setImagePreview(URL.createObjectURL(blob));
       setIsBgPickerMode(false);
@@ -345,6 +399,7 @@ export default function AddOutfit() {
     setCroppedPreview(null);
     setCroppedBlob(null);
     setCropRect(null);
+    setOrigDims(null);
     setIsCropping(false);
     setIsRemoveBgStep(false);
     setIsRemovingBg(false);
@@ -589,11 +644,14 @@ export default function AddOutfit() {
           // Step 3: Remove background choice
           <div className="space-y-4">
             <Card className="overflow-hidden">
-              <div className="aspect-[3/4] bg-muted">
+              {/* No fixed aspect ratio — show the image at its natural crop
+                  dimensions so the user can see the full height of a tall
+                  narrow strip before deciding to remove the background. */}
+              <div className="flex items-center justify-center bg-muted">
                 <img
                   src={croppedPreview || imagePreview || ""}
                   alt="Your photo"
-                  className="w-full h-full object-cover"
+                  className="max-h-[70vh] max-w-full object-contain"
                 />
               </div>
             </Card>
@@ -725,7 +783,13 @@ export default function AddOutfit() {
                 <Button size="sm" onClick={handleCropDone} data-testid="button-apply-crop">Apply</Button>
               </div>
             </div>
-            <ReactCrop crop={crop} onChange={(c) => setCrop(c)} aspect={3 / 4} className="max-h-[60vh] mx-auto">
+            <ReactCrop
+              crop={crop}
+              onChange={(c) => setCrop(c)}
+              minWidth={40}
+              minHeight={40}
+              className="max-h-[60vh] mx-auto"
+            >
               <img ref={imgRef} src={imagePreview} alt="Crop preview" onLoad={onImageLoad} className="max-h-[60vh] mx-auto" />
             </ReactCrop>
           </div>

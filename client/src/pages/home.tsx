@@ -329,11 +329,11 @@ export default function Home() {
                       className="overflow-hidden hover-elevate cursor-pointer"
                       data-testid={`card-outfit-${outfit.id}`}
                     >
-                      <div className="aspect-[3/4] bg-muted">
+                      <div className="bg-muted aspect-[3/4] overflow-hidden">
                         <img
                           src={outfit.fullImageUrl}
                           alt={`Outfit from ${outfit.dateWorn}`}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-cover block"
                         />
                       </div>
                       <div className="p-2">
@@ -369,12 +369,11 @@ export default function Home() {
                       className="overflow-hidden hover-elevate cursor-pointer"
                       data-testid={`card-outfit-feed-${outfit.id}`}
                     >
-                      <div className="bg-muted">
+                      <div className="bg-muted overflow-hidden" style={{ maxHeight: "480px" }}>
                         <img
                           src={outfit.fullImageUrl}
                           alt={`Outfit from ${outfit.dateWorn}`}
-                          className="w-full object-cover"
-                          style={{ maxHeight: "70vh" }}
+                          className="w-full h-full object-cover block"
                         />
                       </div>
                       <div className="p-3">
