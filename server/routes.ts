@@ -8,10 +8,6 @@ import { z } from "zod";
 import OpenAI from "openai";
 import "./replit_integrations/auth/types"; // Import Express.User type augmentation
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 // Helper to get userId from request (Replit Auth — only call after isAuthenticated middleware)
 function getUserId(req: Request): string {
   const sub = req.user!.claims.sub;
@@ -141,6 +137,14 @@ export async function registerRoutes(
       if (!imageUrl || !dateWorn) {
         return res.status(400).json({ error: "imageUrl and dateWorn are required" });
       }
+
+      // Clothing detection is optional — construct the OpenAI client lazily so a
+      // missing key degrades this one feature instead of crashing the server.
+      const openaiKey = process.env.OPENAI_API_KEY;
+      if (!openaiKey) {
+        return res.status(500).json({ error: "OPENAI_API_KEY not configured" });
+      }
+      const openai = new OpenAI({ apiKey: openaiKey });
 
       // Create the outfit first
       const outfit = await storage.createOutfit({
