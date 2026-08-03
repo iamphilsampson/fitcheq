@@ -76,13 +76,24 @@ export default function OutfitDetail() {
   // "View original photo" toggle state — only meaningful when the outfit has
   // a stored originalImageUrl (i.e. it was composited from a raw photo).
   const [viewingOriginal, setViewingOriginal] = useState(false);
+  // Photo display mode: "fit" shows the whole frame, "fill" zooms to show more
+  // detail. Toggled by tapping the centre of the photo.
+  const [imageFit, setImageFit] = useState<"fit" | "fill">("fit");
 
   const outfitId = params?.id ? parseInt(params.id) : null;
 
-  // Reset the view-original toggle whenever we navigate to a different outfit.
+  // Reset per-outfit view toggles whenever we navigate to a different outfit.
   useEffect(() => {
     setViewingOriginal(false);
+    setImageFit("fit");
   }, [outfitId]);
+
+  // Radix can leave `pointer-events: none` on <body> if an AlertDialog unmounts
+  // (e.g. we navigate away after Delete) before its close cleanup runs, which
+  // freezes the destination page. Restore it whenever this page unmounts.
+  useEffect(() => {
+    return () => { document.body.style.pointerEvents = ""; };
+  }, []);
 
   const { data: outfit, isLoading } = useQuery<OutfitWithItems>({
     queryKey: ["/api/outfits", outfitId],
@@ -692,7 +703,8 @@ export default function OutfitDetail() {
                 <img
                   src={viewingOriginal && outfit.originalImageUrl ? outfit.originalImageUrl : outfit.fullImageUrl}
                   alt={`Outfit from ${outfit.dateWorn}${viewingOriginal ? " (original)" : ""}`}
-                  className="w-full h-auto block"
+                  onClick={() => setImageFit((m) => (m === "fit" ? "fill" : "fit"))}
+                  className={`w-full block cursor-pointer ${imageFit === "fill" ? "h-[80vh] object-cover" : "h-auto"}`}
                   data-testid="outfit-photo"
                 />
               )}

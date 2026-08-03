@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Camera, Upload, ArrowLeft, ArrowRight, Loader2, X, Image as ImageIcon, Crop, Wand2, LogIn } from "lucide-react";
+import { Camera, Upload, ArrowLeft, ArrowRight, Loader2, X, Image as ImageIcon, Crop, Wand2, LogIn, Plus } from "lucide-react";
 import exifr from "exifr";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -321,6 +321,10 @@ export default function AddOutfit() {
     setIsRemoveBgStep(false);
   };
 
+  const handleCustomBgSoon = () => {
+    toast({ title: "Coming soon", description: "You'll be able to upload your own background here." });
+  };
+
   const handleComposite = async () => {
     if (!cutoutBlob) return;
     setIsCompositing(true);
@@ -585,7 +589,7 @@ export default function AddOutfit() {
               </Button>
             </div>
 
-            <div className="rounded-xl overflow-hidden bg-muted flex items-center justify-center">
+            <div className="relative rounded-xl overflow-hidden bg-muted flex items-center justify-center">
               <canvas
                 ref={previewCanvasRef}
                 width={previewDims.w}
@@ -594,24 +598,41 @@ export default function AddOutfit() {
                 style={{ aspectRatio: previewAspect, display: "block" }}
                 data-testid="canvas-preview"
               />
-            </div>
 
-            <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1">
-              {BACKGROUNDS.map((bg, i) => (
-                <button
-                  key={bg.name}
-                  onClick={() => setSelectedBg(i)}
-                  className={`flex-shrink-0 flex flex-col items-center gap-1.5 transition-opacity ${selectedBg === i ? "opacity-100" : "opacity-55 hover:opacity-80"}`}
-                  data-testid={`button-bg-${i}`}
-                  title={bg.name}
-                >
-                  <span
-                    className={`block w-12 h-12 shrink-0 aspect-square rounded-full border-2 box-border transition-all ${selectedBg === i ? "border-foreground scale-110 shadow-md" : "border-transparent"}`}
-                    style={{ background: bg.css }}
-                  />
-                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">{bg.name}</span>
-                </button>
-              ))}
+              {/* Scrollable, translucent swatch bar floating over the image bottom. */}
+              <div className="absolute bottom-0 inset-x-0 bg-black/45 backdrop-blur-md">
+                <div className="flex gap-3 overflow-x-auto px-3 py-2.5">
+                  {BACKGROUNDS.map((bg, i) => (
+                    <button
+                      key={bg.name}
+                      onClick={() => setSelectedBg(i)}
+                      className="flex-shrink-0 flex flex-col items-center gap-1"
+                      data-testid={`button-bg-${i}`}
+                      title={bg.name}
+                    >
+                      <span
+                        className={`block w-11 h-11 shrink-0 aspect-square rounded-full border-2 box-border transition-all ${selectedBg === i ? "border-white scale-110 shadow-md" : "border-white/40"}`}
+                        style={{ background: bg.css }}
+                      />
+                      <span className="text-[10px] text-white/90 whitespace-nowrap">{bg.name}</span>
+                    </button>
+                  ))}
+
+                  {/* Coming-soon: upload your own background. */}
+                  <button
+                    onClick={handleCustomBgSoon}
+                    className="flex-shrink-0 flex flex-col items-center gap-1"
+                    data-testid="button-bg-custom"
+                    title="Your own background (coming soon)"
+                  >
+                    <span className="relative flex w-11 h-11 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-white/50 text-white/80">
+                      <Plus className="h-5 w-5" />
+                      <span className="absolute -top-1 -right-1 rounded-full bg-white/90 px-1 text-[8px] font-bold uppercase tracking-wide text-zinc-900">soon</span>
+                    </span>
+                    <span className="text-[10px] text-white/90 whitespace-nowrap">Your own</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
             <Button className="w-full gap-2" size="lg" onClick={handleComposite} disabled={isCompositing} data-testid="button-use-background">
