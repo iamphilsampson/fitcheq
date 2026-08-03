@@ -97,7 +97,9 @@ export default function OutfitDetail() {
   const prevId = currentIndex > 0 ? allOutfits![currentIndex - 1].id : null;
   const nextId = allOutfits && currentIndex < allOutfits.length - 1 ? allOutfits[currentIndex + 1].id : null;
   const totalCount = allOutfits?.length ?? 0;
-  const positionLabel = currentIndex >= 0 && totalCount > 1 ? `${currentIndex + 1} / ${totalCount}` : null;
+  // The list is newest-first (index 0 = newest). Number chronologically so the
+  // oldest outfit is 1 and the newest is N, matching the ascending id.
+  const positionLabel = currentIndex >= 0 && totalCount > 1 ? `${totalCount - currentIndex} / ${totalCount}` : null;
 
   // Redraw preview canvas whenever bg selection changes in picker mode
   useEffect(() => {

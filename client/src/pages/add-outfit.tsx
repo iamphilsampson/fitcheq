@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Camera, Upload, ArrowLeft, Loader2, X, Image as ImageIcon, Crop, Wand2, LogIn } from "lucide-react";
+import { Camera, Upload, ArrowLeft, ArrowRight, Loader2, X, Image as ImageIcon, Crop, Wand2, LogIn } from "lucide-react";
 import exifr from "exifr";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import ReactCrop, { type Crop as CropType } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
-import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, cropImageBlob, measureCutoutTransparency, BgRemovalTimeoutError, CutoutNotTransparentError, type BgRemovalProgress, type CropRect, type CompositeContext } from "@/lib/imageUtils";
+import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, cropImageBlob, measureCutoutTransparency, BgRemovalTimeoutError, CutoutNotTransparentError, type BgRemovalProgress, type CropRect } from "@/lib/imageUtils";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -130,13 +130,15 @@ export default function AddOutfit() {
     }
   }, [isAuthenticated]);
 
-  // Preview canvas pixel dimensions follow the ORIGINAL photo's aspect ratio
-  // so the background-picker preview matches the saved output exactly.
-  // Falls back to the crop aspect ratio when origDims isn't captured yet.
+  // Preview canvas pixel dimensions follow the CUTOUT's aspect ratio (i.e. the
+  // cropped frame) so the background-picker preview matches the saved output,
+  // which now centre-fits the cutout to fill the frame. Falls back to the full
+  // photo dims for the skip-crop path (where the cutout is the whole photo).
   const previewDims = (() => {
     const MAX = 600;
-    const ref = origDims
-      ?? (cropRect && cropRect.w > 0 && cropRect.h > 0 ? { w: cropRect.w, h: cropRect.h } : null);
+    const ref = (cropRect && cropRect.w > 0 && cropRect.h > 0
+      ? { w: cropRect.w, h: cropRect.h }
+      : origDims);
     if (ref && ref.w > 0 && ref.h > 0) {
       const longest = Math.max(ref.w, ref.h);
       const scale = longest > MAX ? MAX / longest : 1;
@@ -150,8 +152,9 @@ export default function AddOutfit() {
   const previewAspect = `${previewDims.w} / ${previewDims.h}`;
 
   // Redraw preview canvas whenever selected background changes in bg picker mode.
-  // Mirrors compositeOnBackground exactly: canvas is the full original photo
-  // rectangle (at preview scale), cutout is placed at the crop offset.
+  // Mirrors compositeOnBackground (no-context path): centre-fit the cutout into
+  // the frame so the subject fills it, rather than shrinking them into the full
+  // original-photo rectangle.
   useEffect(() => {
     if (!isBgPickerMode || !cutoutBlob || !previewCanvasRef.current) return;
     const canvas = previewCanvasRef.current;
@@ -160,29 +163,11 @@ export default function AddOutfit() {
     const url = URL.createObjectURL(cutoutBlob);
     const img = new Image();
     img.onload = () => {
-      if (origDims && origDims.w > 0) {
-        // canvas.width === origDims.w * srcScale (previewDims derived from origDims)
-        const srcScale = canvas.width / origDims.w;
-        const cropW = cropRect?.w ?? origDims.w;
-        const cropH = cropRect?.h ?? origDims.h;
-        const cropX = cropRect?.x ?? 0;
-        const cropY = cropRect?.y ?? 0;
-        // Match compositeOnBackground: cutoutScale = srcScale / cropScale
-        const cropScale = Math.min(1, 2400 / Math.max(cropW, cropH));
-        const cutoutScale = srcScale / cropScale;
-        const cW = Math.max(1, Math.round(img.naturalWidth * cutoutScale));
-        const cH = Math.max(1, Math.round(img.naturalHeight * cutoutScale));
-        const ox = Math.round(cropX * srcScale);
-        const oy = Math.round(cropY * srcScale);
-        ctx.drawImage(img, ox, oy, cW, cH);
-      } else {
-        // Fallback for draft-restore path where origDims isn't available.
-        drawCutoutCentered(ctx, img, canvas.width, canvas.height);
-      }
+      drawCutoutCentered(ctx, img, canvas.width, canvas.height);
       URL.revokeObjectURL(url);
     };
     img.src = url;
-  }, [isBgPickerMode, cutoutBlob, selectedBg, origDims, cropRect, previewDims.w, previewDims.h]);
+  }, [isBgPickerMode, cutoutBlob, selectedBg, previewDims.w, previewDims.h]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -356,20 +341,10 @@ export default function AddOutfit() {
     if (!cutoutBlob) return;
     setIsCompositing(true);
     try {
-      // Build context from the original photo dims + crop offset so the canvas
-      // is sized from the full original photo rectangle. Background fills the
-      // entire original photo; the person is placed at their crop position.
-      const context: CompositeContext | undefined = origDims
-        ? {
-            srcW: origDims.w,
-            srcH: origDims.h,
-            cropX: cropRect?.x ?? 0,
-            cropY: cropRect?.y ?? 0,
-            cropW: cropRect?.w ?? origDims.w,
-            cropH: cropRect?.h ?? origDims.h,
-          }
-        : undefined;
-      const blob = await compositeOnBackground(cutoutBlob, selectedBg, context);
+      // Centre-fit the cutout so the subject fills the frame (no full-photo
+      // context — that shrank the person into the original rectangle). A future
+      // pass will add manual drag + pinch-zoom on top of this default.
+      const blob = await compositeOnBackground(cutoutBlob, selectedBg);
       setCompositeBlob(blob);
       setImagePreview(URL.createObjectURL(blob));
       setIsBgPickerMode(false);
@@ -535,6 +510,11 @@ export default function AddOutfit() {
 
   const hasReadyImage = !!(selectedImage || compositeBlob);
 
+  // Flow step for the progress indicator. 0 = pre-flow (pick a photo).
+  // 1 Crop · 2 Remove background · 3 Choose background · 4 Details.
+  const flowStep = isCropping ? 1 : isRemoveBgStep ? 2 : isBgPickerMode ? 3 : imagePreview ? 4 : 0;
+  const STEP_LABELS = ["", "Crop", "Remove background", "Choose background", "Details"];
+
   const handleBack = () => {
     if (isBgPickerMode) {
       // Keep cutoutBlob so re-entering bg picker skips the ML model run
@@ -594,6 +574,23 @@ export default function AddOutfit() {
       <main className="p-4 space-y-4">
         <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} data-testid="input-file" />
 
+        {flowStep >= 1 && (
+          <div className="space-y-1.5" data-testid="flow-stepper">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-foreground">Step {flowStep} of 4</span>
+              <span className="text-xs text-muted-foreground">{STEP_LABELS[flowStep]}</span>
+            </div>
+            <div className="flex gap-1">
+              {[1, 2, 3, 4].map((n) => (
+                <div
+                  key={n}
+                  className={`h-1 flex-1 rounded-full transition-colors ${n <= flowStep ? "bg-primary" : "bg-muted"}`}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         {isBgPickerMode && cutoutBlob ? (
           // Step 4: Background picker
           <div className="space-y-4">
@@ -635,8 +632,8 @@ export default function AddOutfit() {
 
             <Button className="w-full gap-2" size="lg" onClick={handleComposite} disabled={isCompositing} data-testid="button-use-background">
               {isCompositing
-                ? <><Loader2 className="h-5 w-5 animate-spin" /> Compositing...</>
-                : <><Upload className="h-5 w-5" /> Use this background</>}
+                ? <><Loader2 className="h-5 w-5 animate-spin" /> Applying background...</>
+                : <>Next: Add details <ArrowRight className="h-5 w-5" /></>}
             </Button>
           </div>
 
@@ -644,15 +641,25 @@ export default function AddOutfit() {
           // Step 3: Remove background choice
           <div className="space-y-4">
             <Card className="overflow-hidden">
-              {/* No fixed aspect ratio — show the image at its natural crop
-                  dimensions so the user can see the full height of a tall
-                  narrow strip before deciding to remove the background. */}
-              <div className="flex items-center justify-center bg-muted">
+              {/* Capped so the action buttons below stay on-screen. A processing
+                  overlay makes the loading state obvious on the image itself. */}
+              <div className="relative flex items-center justify-center bg-muted">
                 <img
                   src={croppedPreview || imagePreview || ""}
                   alt="Your photo"
-                  className="max-h-[70vh] max-w-full object-contain"
+                  className={`max-h-[50vh] max-w-full object-contain transition-opacity ${isRemovingBg ? "opacity-30" : ""}`}
                 />
+                {isRemovingBg && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center">
+                    <Loader2 className="h-9 w-9 animate-spin text-primary" />
+                    <p className="text-sm font-medium text-foreground">
+                      {bgProgress?.phase === "download" ? "Downloading model…" : "Removing background…"}
+                    </p>
+                    {bgProgress && bgProgress.phase !== "server" && (
+                      <p className="text-xs text-muted-foreground tabular-nums">{bgProgress.percent}%</p>
+                    )}
+                  </div>
+                )}
               </div>
             </Card>
 
@@ -732,7 +739,7 @@ export default function AddOutfit() {
                     disabled={isRemovingBg}
                     data-testid="button-skip-bg-removal"
                   >
-                    Skip — upload as-is
+                    Use photo as-is
                   </Button>
                 </>
               )}
@@ -774,24 +781,24 @@ export default function AddOutfit() {
         ) : isCropping ? (
           // Step 2: Crop
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium flex items-center gap-2">
-                <Crop className="h-4 w-4" /> Crop your photo
-              </span>
-              <div className="flex gap-2">
-                <Button variant="ghost" size="sm" onClick={handleSkipCrop} data-testid="button-skip-crop">Skip</Button>
-                <Button size="sm" onClick={handleCropDone} data-testid="button-apply-crop">Apply</Button>
-              </div>
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Crop className="h-4 w-4" /> Crop your photo
             </div>
             <ReactCrop
               crop={crop}
               onChange={(c) => setCrop(c)}
               minWidth={40}
               minHeight={40}
-              className="max-h-[60vh] mx-auto"
+              className="max-h-[55vh] mx-auto"
             >
-              <img ref={imgRef} src={imagePreview} alt="Crop preview" onLoad={onImageLoad} className="max-h-[60vh] mx-auto" />
+              <img ref={imgRef} src={imagePreview} alt="Crop preview" onLoad={onImageLoad} className="max-h-[55vh] mx-auto" />
             </ReactCrop>
+            <Button className="w-full gap-2" size="lg" onClick={handleCropDone} data-testid="button-apply-crop">
+              Next: Remove background <ArrowRight className="h-5 w-5" />
+            </Button>
+            <Button variant="ghost" className="w-full" size="lg" onClick={handleSkipCrop} data-testid="button-skip-crop">
+              Skip crop
+            </Button>
           </div>
 
         ) : (
@@ -833,7 +840,7 @@ export default function AddOutfit() {
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <Label htmlFor="date" className="text-sm">Date Worn</Label>
-                <Input id="date" type="date" value={dateWorn} onChange={(e) => setDateWorn(e.target.value)} className="block appearance-none text-left [&::-webkit-date-and-time-value]:text-left" data-testid="input-date" />
+                <Input id="date" type="date" value={dateWorn} onChange={(e) => setDateWorn(e.target.value)} className="flex items-center appearance-none text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-date-and-time-value]:m-0 [&::-webkit-datetime-edit]:p-0" data-testid="input-date" />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="notes" className="text-sm">Notes (optional)</Label>
