@@ -14,6 +14,13 @@
 .has-env-banner header.sticky {
   top: var(--env-banner-h);
 }
+/* Any full-height element inside the banner layout must reserve the banner's
+   height, otherwise banner + 100dvh content overflows by the banner height and
+   leaves a strip of blank scroll. */
+.has-env-banner.min-h-dvh,
+.has-env-banner .min-h-dvh {
+  min-height: calc(100dvh - var(--env-banner-h));
+}
 
 /* LIGHT MODE - Fashion/Wardrobe inspired palette */
 :root {

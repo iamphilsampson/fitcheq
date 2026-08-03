@@ -272,31 +272,28 @@ export interface CompositeContext {
   cropH: number;  // crop height in original pixels
 }
 
+// Output frame aspect ratio (portrait 3:4) for all composites. The background
+// fills the whole frame and the subject is centre-fit into it, so tall/narrow
+// crops end up centred on a full colour field rather than a thin strip.
+export const FRAME_ASPECT = 3 / 4;
+
 /**
  * Composite a transparent-PNG cutout onto a solid/gradient background.
  *
- * When `context` is provided the canvas is sized from the full original photo
- * dimensions (`srcW × srcH`, scaled to `maxLongSide`), so the background
- * fills the entire original photo rectangle. The cutout is scaled by the
- * ratio `srcScale / cropScale` (preserving the person's natural size relative
- * to the original frame) and drawn at the crop's (x, y) offset.
- *
- * When `context` is omitted the canvas is sized from the cutout's natural
- * dimensions — backward-compat for the "re-remove bg from existing photo"
- * path where no original-photo context is available.
+ * The output is a fixed portrait 3:4 frame, fully filled with the chosen
+ * background, with the cutout centre-fit inside it. This keeps the colour
+ * field filling the whole frame regardless of how the source was cropped.
+ * (`context` is retained for signature compatibility but no longer used.)
  */
 export async function compositeOnBackground(
   cutoutBlob: Blob,
   bgIndex: number,
-  context?: CompositeContext,
-  maxLongSide = 2400
+  _context?: CompositeContext,
+  frameHeight = 1600
 ): Promise<Blob> {
   // Defense-in-depth: refuse to composite an essentially-opaque cutout.
   const transparentRatio = await measureCutoutTransparency(cutoutBlob);
-  console.info(
-    `[composite] transparentRatio=${transparentRatio.toFixed(3)} bgIndex=${bgIndex}`,
-    context ? `src=${context.srcW}x${context.srcH} crop=${context.cropW}x${context.cropH}@(${context.cropX},${context.cropY})` : "no-context"
-  );
+  console.info(`[composite] transparentRatio=${transparentRatio.toFixed(3)} bgIndex=${bgIndex}`);
   if (transparentRatio < 0.05) {
     throw new CutoutNotTransparentError(transparentRatio);
   }
@@ -304,51 +301,14 @@ export async function compositeOnBackground(
     const url = URL.createObjectURL(cutoutBlob);
     const img = new Image();
     img.onload = () => {
-      let outW: number, outH: number;
-      let drawX: number, drawY: number, drawW: number, drawH: number;
-
-      if (context && context.srcW > 0 && context.srcH > 0) {
-        // Full-photo canvas: background fills the entire original photo rect.
-        const srcScale = Math.min(1, maxLongSide / Math.max(context.srcW, context.srcH));
-        outW = Math.max(1, Math.round(context.srcW * srcScale));
-        outH = Math.max(1, Math.round(context.srcH * srcScale));
-
-        // The cutout was produced at cropScale = min(1, 2400/max(cropW,cropH)).
-        // Scale it by srcScale/cropScale so the person keeps their correct
-        // proportional size within the original-photo canvas.
-        const cropScale = Math.min(1, maxLongSide / Math.max(context.cropW, context.cropH));
-        const cutoutScale = srcScale / cropScale;
-        drawW = Math.max(1, Math.round(img.naturalWidth * cutoutScale));
-        drawH = Math.max(1, Math.round(img.naturalHeight * cutoutScale));
-        drawX = Math.round(context.cropX * srcScale);
-        drawY = Math.round(context.cropY * srcScale);
-      } else {
-        // No source context: backward-compat path for the outfit-detail
-        // "re-remove bg from current photo" flow where no original-photo
-        // context is available. Canvas is sized from the cutout's natural
-        // dims (scaled to maxLongSide cap), cutout drawn at native scale
-        // centered — same behaviour as before Task #34.
-        const longest = Math.max(img.naturalWidth, img.naturalHeight);
-        const s = longest > maxLongSide ? maxLongSide / longest : 1;
-        outW = Math.max(1, Math.round(img.naturalWidth * s));
-        outH = Math.max(1, Math.round(img.naturalHeight * s));
-        // After scaling the canvas the cutout may or may not equal canvas size;
-        // draw at native (1:1) scale centred, falling back to contain-fit if
-        // the cutout somehow exceeds the canvas (e.g. upscaled by provider).
-        const scaledW = Math.round(img.naturalWidth * s);
-        const scaledH = Math.round(img.naturalHeight * s);
-        drawW = scaledW;
-        drawH = scaledH;
-        drawX = Math.round((outW - scaledW) / 2);
-        drawY = Math.round((outH - scaledH) / 2);
-      }
-
+      const outH = frameHeight;
+      const outW = Math.round(outH * FRAME_ASPECT);
       const canvas = document.createElement("canvas");
       canvas.width = outW;
       canvas.height = outH;
       const ctx = canvas.getContext("2d")!;
       drawBackground(ctx, BACKGROUNDS[bgIndex], outW, outH);
-      ctx.drawImage(img, drawX, drawY, drawW, drawH);
+      drawCutoutCentered(ctx, img, outW, outH);
       URL.revokeObjectURL(url);
       canvas.toBlob(
         (blob) => { if (blob) resolve(blob); else reject(new Error("Canvas empty")); },

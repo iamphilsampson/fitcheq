@@ -130,25 +130,9 @@ export default function AddOutfit() {
     }
   }, [isAuthenticated]);
 
-  // Preview canvas pixel dimensions follow the CUTOUT's aspect ratio (i.e. the
-  // cropped frame) so the background-picker preview matches the saved output,
-  // which now centre-fits the cutout to fill the frame. Falls back to the full
-  // photo dims for the skip-crop path (where the cutout is the whole photo).
-  const previewDims = (() => {
-    const MAX = 600;
-    const ref = (cropRect && cropRect.w > 0 && cropRect.h > 0
-      ? { w: cropRect.w, h: cropRect.h }
-      : origDims);
-    if (ref && ref.w > 0 && ref.h > 0) {
-      const longest = Math.max(ref.w, ref.h);
-      const scale = longest > MAX ? MAX / longest : 1;
-      return {
-        w: Math.max(1, Math.round(ref.w * scale)),
-        h: Math.max(1, Math.round(ref.h * scale)),
-      };
-    }
-    return { w: 300, h: 400 };
-  })();
+  // Fixed portrait 3:4 preview frame, matching compositeOnBackground's output
+  // frame exactly (background fills the whole frame, subject centre-fit).
+  const previewDims = { w: 450, h: 600 };
   const previewAspect = `${previewDims.w} / ${previewDims.h}`;
 
   // Redraw preview canvas whenever selected background changes in bg picker mode.
@@ -650,13 +634,20 @@ export default function AddOutfit() {
                   className={`max-h-[50vh] max-w-full object-contain transition-opacity ${isRemovingBg ? "opacity-30" : ""}`}
                 />
                 {isRemovingBg && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center">
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 px-6 text-center">
                     <Loader2 className="h-9 w-9 animate-spin text-primary" />
-                    <p className="text-sm font-medium text-foreground">
-                      {bgProgress?.phase === "download" ? "Downloading model…" : "Removing background…"}
+                    <p className="text-sm font-semibold text-foreground">
+                      {!bgProgress ? "Starting up…"
+                        : bgProgress.phase === "download" ? "Downloading the AI model…"
+                        : "Removing the background…"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {!bgProgress ? "Getting things ready"
+                        : bgProgress.phase === "download" ? "One-time setup — this won't happen again"
+                        : "Finding you and cutting out the scene"}
                     </p>
                     {bgProgress && bgProgress.phase !== "server" && (
-                      <p className="text-xs text-muted-foreground tabular-nums">{bgProgress.percent}%</p>
+                      <p className="text-xs font-semibold text-primary tabular-nums">{bgProgress.percent}%</p>
                     )}
                   </div>
                 )}
