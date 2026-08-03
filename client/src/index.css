@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Non-production environment banner (see components/EnvBanner.tsx).
+   Reserve space at the top and push the sticky page headers below it so the
+   fixed banner never overlaps them. */
+:root {
+  --env-banner-h: 1.5rem;
+}
+.has-env-banner {
+  padding-top: var(--env-banner-h);
+}
+.has-env-banner header.sticky {
+  top: var(--env-banner-h);
+}
+
 /* LIGHT MODE - Fashion/Wardrobe inspired palette */
 :root {
   --button-outline: rgba(0,0,0, .10);

@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "fitcheq",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "/Users/phillipsamson/Projects/zpersonal/code/fitcheq", "run", "dev"],
+      "port": 5000,
+      "autoPort": true
+    }
+  ]
+}
