@@ -415,9 +415,9 @@ export default function OutfitDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/outfits"] });
       toast({ title: "Outfit deleted", description: "The outfit has been removed." });
-      if (prevId) navigate(`/outfits/${prevId}`);
-      else if (nextId) navigate(`/outfits/${nextId}`);
-      else navigate("/");
+      // Return to the list rather than an adjacent outfit — jumping to the next
+      // outfit left the back button pointing at the just-deleted one.
+      navigate("/");
     },
     onError: (error) => {
       toast({ title: "Failed to delete", description: error instanceof Error ? error.message : "Something went wrong", variant: "destructive" });
@@ -438,7 +438,7 @@ export default function OutfitDetail() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-dvh bg-background">
         <header className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b">
           <div className="px-4 py-2 flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={() => navigate("/")}><ArrowLeft className="h-5 w-5" /></Button>
@@ -456,7 +456,7 @@ export default function OutfitDetail() {
 
   if (!outfit) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-dvh bg-background flex items-center justify-center">
         <div className="text-center">
           <h2 className="font-semibold">Outfit not found</h2>
           <Button variant="link" onClick={() => navigate("/")}>Go back home</Button>
@@ -477,7 +477,7 @@ export default function OutfitDetail() {
   else if (isRemoveBgStep || showPhotoOptions) headerTitle = isCurrentPhotoBgFlow ? "Remove Background" : "Replace Photo";
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-dvh bg-background">
       <input
         ref={fileInputRef}
         type="file"

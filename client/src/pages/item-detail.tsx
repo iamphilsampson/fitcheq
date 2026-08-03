@@ -111,7 +111,7 @@ export default function ItemDetail() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-dvh bg-background">
         <header className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b">
           <div className="px-4 py-3 flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
@@ -131,7 +131,7 @@ export default function ItemDetail() {
 
   if (!item) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-dvh bg-background flex items-center justify-center">
         <div className="text-center">
           <h2 className="font-semibold">Item not found</h2>
           <Button variant="link" onClick={() => navigate("/")}>
@@ -143,7 +143,7 @@ export default function ItemDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-dvh bg-background">
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">

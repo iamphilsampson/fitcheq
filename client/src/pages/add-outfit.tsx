@@ -546,7 +546,7 @@ export default function AddOutfit() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-dvh bg-background">
       {/* Sign-in prompt modal for guests */}
       <Dialog open={showSignInPrompt} onOpenChange={setShowSignInPrompt}>
         <DialogContent data-testid="dialog-sign-in-prompt">

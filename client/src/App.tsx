@@ -33,7 +33,7 @@ function Gate() {
   const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
-    return <div className="min-h-screen" aria-hidden />;
+    return <div className="min-h-dvh" aria-hidden />;
   }
   return isAuthenticated ? <Router /> : <Login />;
 }
@@ -42,7 +42,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <div className={`max-w-md mx-auto min-h-screen bg-background ${isProduction ? "" : "has-env-banner"}`}>
+        <div className={`max-w-md mx-auto min-h-dvh bg-background ${isProduction ? "" : "has-env-banner"}`}>
           <EnvBanner />
           <Toaster />
           <Gate />
