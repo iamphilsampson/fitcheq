@@ -196,23 +196,21 @@ export default function AddOutfit() {
     setCrop({ unit: "%", x: 32.5, y: 2.5, width: 35, height: 95 });
   }, []);
 
-  const handleCropDone = async () => {
-    if (!imgRef.current || !crop || !crop.width || !crop.height || !selectedImage) return;
+  const applyCrop = async (): Promise<Blob | null> => {
+    if (!imgRef.current || !crop || !crop.width || !crop.height || !selectedImage) return null;
+    // Invalidate any cached cutout/composite — they were crop-specific.
+    setCutoutBlob(null);
+    setCompositeBlob(null);
+    setBgTimedOut(false);
+    setIsCropping(false);
     try {
       const rect = cropToImagePixels(imgRef.current, crop);
-      // Cap the cropped preview/upload at 2400px on the longest side so
-      // tight crops produce smaller files than the previous fixed 2400×3200.
+      // Cap the cropped preview/upload at 2400px on the longest side.
       const blob = await cropImageBlob(selectedImage, rect, 2400, 0.92);
       setCropRect(rect);
       setCroppedBlob(blob);
       setCroppedPreview(URL.createObjectURL(blob));
-      // Cutouts are now crop-specific — invalidate any cached cutout/composite
-      // so the BG-removal step re-runs against the new cropped source.
-      setCutoutBlob(null);
-      setCompositeBlob(null);
-      setBgTimedOut(false);
-      setIsCropping(false);
-      setIsRemoveBgStep(true);
+      return blob;
     } catch {
       // Fallback to canvas-based crop from the displayed image element.
       try {
@@ -221,47 +219,48 @@ export default function AddOutfit() {
         setCropRect(rect);
         setCroppedBlob(blob);
         setCroppedPreview(URL.createObjectURL(blob));
-        setCutoutBlob(null);
-        setCompositeBlob(null);
-        setBgTimedOut(false);
-        setIsCropping(false);
-        setIsRemoveBgStep(true);
+        return blob;
       } catch {
         toast({ title: "Crop failed", variant: "destructive" });
-        setIsCropping(false);
+        return null;
       }
     }
   };
 
-  const handleSkipCrop = () => {
-    // Clear any cropped blob so the BG-removal step uses the full original
-    // image (croppedBlob || selectedImage resolves to selectedImage).
-    // Also invalidate any cached cutout/composite — it was crop-specific and
-    // must not be reused for a different source (full image, skip-crop path).
-    setCropRect(null);
-    setCroppedBlob(null);
-    setCroppedPreview(null);
-    setCutoutBlob(null);
-    setCompositeBlob(null);
-    setBgTimedOut(false);
-    setIsCropping(false);
+  // Crop + remove background in one action (no separate "remove bg" gate).
+  const handleCropRemoveBg = async () => {
+    // Enter the loading state up-front so there's no flash of the details or
+    // recovery UI while the crop is being produced.
     setIsRemoveBgStep(true);
+    setIsRemovingBg(true);
+    setBgProgress(null);
+    const blob = await applyCrop();
+    if (!blob) {
+      setIsRemovingBg(false);
+      setIsRemoveBgStep(false);
+      setIsCropping(true);
+      return;
+    }
+    runBgRemoval(blob);
   };
 
-  const handleRemoveBg = async () => {
-    // If we already computed a cutout (e.g. user went back from picker), reuse it
-    if (cutoutBlob) {
+  // Crop + skip background removal → straight to the details step.
+  const handleCropUseAsIs = async () => {
+    await applyCrop();
+    // isCropping is now false and no bg steps are active → preview/details shows.
+  };
+
+  const runBgRemoval = async (sourceOverride?: Blob) => {
+    // Reuse an existing cutout only when no fresh source is supplied (a fresh
+    // cropped source always means we want to re-run against the new crop).
+    if (!sourceOverride && cutoutBlob) {
       setIsRemoveBgStep(false);
       setIsBgPickerMode(true);
       setSelectedBg(0);
       return;
     }
-    // Use the already-cropped blob when available (cropped path: already 2400-capped).
-    // For the skip-crop path, selectedImage is the raw full-resolution file which
-    // may be much larger than 2400px. Pre-scale it to 2400 max so the cutout
-    // dimensions align with compositeOnBackground's srcScale/cropScale contract —
-    // otherwise the cutout overflows the 2400-capped canvas.
-    let source: Blob | null = croppedBlob;
+    // Prefer the freshly-cropped blob; fall back to the (pre-scaled) full image.
+    let source: Blob | null = sourceOverride ?? croppedBlob;
     if (!source && selectedImage) {
       if (origDims && Math.max(origDims.w, origDims.h) > 2400) {
         source = await cropImageBlob(
@@ -499,15 +498,22 @@ export default function AddOutfit() {
   const hasReadyImage = !!(selectedImage || compositeBlob);
 
   // Flow step for the progress indicator. 0 = pre-flow (pick a photo).
-  // 1 Crop · 2 Remove background · 3 Choose background · 4 Details.
-  const flowStep = isCropping ? 1 : isRemoveBgStep ? 2 : isBgPickerMode ? 3 : imagePreview ? 4 : 0;
-  const STEP_LABELS = ["", "Crop", "Remove background", "Choose background", "Details"];
+  // 1 Crop · 2 Background (removing + picker) · 3 Details.
+  const flowStep = isCropping ? 1 : (isRemoveBgStep || isBgPickerMode) ? 2 : imagePreview ? 3 : 0;
+  const STEP_LABELS = ["", "Crop", "Background", "Details"];
+  const TOTAL_STEPS = 3;
 
   const handleBack = () => {
     if (isBgPickerMode) {
-      // Keep cutoutBlob so re-entering bg picker skips the ML model run
+      // Background removal is automatic now, so "back" from the picker returns
+      // to the crop step. applyCrop clears the cached cutout if they re-crop.
       setIsBgPickerMode(false);
-      setIsRemoveBgStep(true);
+      setIsRemoveBgStep(false);
+      setIsCropping(true);
+    } else if (isRemoveBgStep) {
+      // Removal is in-flight/failed — cancel back to crop.
+      setIsRemoveBgStep(false);
+      setIsCropping(true);
     } else {
       navigate("/");
     }
@@ -565,11 +571,11 @@ export default function AddOutfit() {
         {flowStep >= 1 && (
           <div className="space-y-1.5" data-testid="flow-stepper">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-foreground">Step {flowStep} of 4</span>
+              <span className="text-xs font-semibold text-foreground">Step {flowStep} of {TOTAL_STEPS}</span>
               <span className="text-xs text-muted-foreground">{STEP_LABELS[flowStep]}</span>
             </div>
             <div className="flex gap-1">
-              {[1, 2, 3, 4].map((n) => (
+              {Array.from({ length: TOTAL_STEPS }, (_, i) => i + 1).map((n) => (
                 <div
                   key={n}
                   className={`h-1 flex-1 rounded-full transition-colors ${n <= flowStep ? "bg-primary" : "bg-muted"}`}
@@ -599,8 +605,9 @@ export default function AddOutfit() {
                 data-testid="canvas-preview"
               />
 
-              {/* Scrollable, translucent swatch bar floating over the image bottom. */}
-              <div className="absolute bottom-0 inset-x-0 bg-black/45 backdrop-blur-md">
+              {/* Scrollable, translucent swatch bar floating over the image bottom.
+                  Gradient keeps the names legible while staying see-through. */}
+              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/45 via-black/20 to-transparent backdrop-blur-[1px]">
                 <div className="flex gap-3 overflow-x-auto px-3 py-2.5">
                   {BACKGROUNDS.map((bg, i) => (
                     <button
@@ -676,81 +683,24 @@ export default function AddOutfit() {
             </Card>
 
             <div className="space-y-2">
-              {bgTimedOut ? (
-                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 space-y-3 text-center" data-testid="container-bg-timeout">
-                  <p className="text-sm font-medium text-foreground">Background removal timed out</p>
-                  <p className="text-xs text-muted-foreground">The server is taking longer than expected. You can try again or skip and upload as-is.</p>
-                  <div className="flex gap-2">
-                    <Button
-                      className="flex-1 gap-2"
-                      size="sm"
-                      onClick={handleRemoveBg}
-                      data-testid="button-retry-bg"
-                    >
-                      <Wand2 className="h-4 w-4" /> Try again
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="flex-1"
-                      size="sm"
-                      onClick={handleSkipBgRemoval}
-                      data-testid="button-skip-after-timeout"
-                    >
-                      Skip
-                    </Button>
+              {isRemovingBg ? (
+                bgProgress?.phase === "server" ? (
+                  <div className="relative h-1.5 rounded-full overflow-hidden bg-primary/20" data-testid="progress-remove-bg-indeterminate">
+                    <div className="absolute inset-y-0 w-1/2 bg-primary rounded-full animate-indeterminate" />
                   </div>
-                </div>
+                ) : (
+                  <Progress value={bgProgress?.percent ?? 0} className="h-1.5" data-testid="progress-remove-bg" />
+                )
               ) : (
+                // Only reached if background removal failed or timed out — offer recovery.
                 <>
-                  <Button
-                    className="w-full gap-2"
-                    size="lg"
-                    onClick={handleRemoveBg}
-                    disabled={isRemovingBg}
-                    data-testid="button-remove-bg"
-                  >
-                    {isRemovingBg
-                      ? <><Loader2 className="h-5 w-5 animate-spin" /> Removing background...</>
-                      : <><Wand2 className="h-5 w-5" /> Remove Background</>}
+                  <p className="text-xs text-center text-muted-foreground">
+                    {bgTimedOut ? "That took longer than expected." : "Couldn't remove the background."} Try again or use the photo as-is.
+                  </p>
+                  <Button className="w-full gap-2" size="lg" onClick={() => runBgRemoval()} data-testid="button-remove-bg">
+                    <Wand2 className="h-5 w-5" /> Try again
                   </Button>
-                  {isRemovingBg && (
-                    <>
-                      {bgProgress?.phase === "server" ? (
-                        <>
-                          <div
-                            className="relative h-1.5 rounded-full overflow-hidden bg-primary/20"
-                            data-testid="progress-remove-bg-indeterminate"
-                          >
-                            <div className="absolute inset-y-0 w-1/2 bg-primary rounded-full animate-indeterminate" />
-                          </div>
-                          <p className="text-xs text-center text-muted-foreground" data-testid="text-bg-status">
-                            Removing background… this may take up to 30 seconds
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <Progress
-                            value={bgProgress?.percent ?? 0}
-                            className="h-1.5"
-                            data-testid="progress-remove-bg"
-                          />
-                          <p className="text-xs text-center text-muted-foreground" data-testid="text-bg-status">
-                            {bgProgress?.phase === "download"
-                              ? "Downloading the background-removal model (one-time)"
-                              : "Processing your photo"}
-                          </p>
-                        </>
-                      )}
-                    </>
-                  )}
-                  <Button
-                    variant="ghost"
-                    className="w-full"
-                    size="lg"
-                    onClick={handleSkipBgRemoval}
-                    disabled={isRemovingBg}
-                    data-testid="button-skip-bg-removal"
-                  >
+                  <Button variant="ghost" className="w-full" size="lg" onClick={handleSkipBgRemoval} data-testid="button-skip-bg-removal">
                     Use photo as-is
                   </Button>
                 </>
@@ -805,11 +755,11 @@ export default function AddOutfit() {
             >
               <img ref={imgRef} src={imagePreview} alt="Crop preview" onLoad={onImageLoad} className="max-h-[55vh] mx-auto" />
             </ReactCrop>
-            <Button className="w-full gap-2" size="lg" onClick={handleCropDone} data-testid="button-apply-crop">
-              Next: Remove background <ArrowRight className="h-5 w-5" />
+            <Button className="w-full gap-2" size="lg" onClick={handleCropRemoveBg} data-testid="button-crop-removebg">
+              <Wand2 className="h-5 w-5" /> Remove background
             </Button>
-            <Button variant="ghost" className="w-full" size="lg" onClick={handleSkipCrop} data-testid="button-skip-crop">
-              Skip crop
+            <Button variant="ghost" className="w-full" size="lg" onClick={handleCropUseAsIs} data-testid="button-crop-asis">
+              Use photo as-is <ArrowRight className="h-5 w-5" />
             </Button>
           </div>
 
@@ -847,7 +797,7 @@ export default function AddOutfit() {
           </div>
         )}
 
-        {!isBgPickerMode && !isRemoveBgStep && (
+        {imagePreview && !isCropping && !isRemoveBgStep && !isBgPickerMode && (
           <>
             <div className="space-y-3">
               <div className="space-y-1.5">
