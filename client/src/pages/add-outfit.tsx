@@ -798,8 +798,18 @@ export default function AddOutfit() {
           // Step 5: Preview + submit
           <div className="relative">
             <Card className="overflow-hidden">
-              <div className="aspect-[3/4] bg-muted relative">
-                <img ref={imgRef} src={croppedPreview || imagePreview} alt="Outfit preview" className="w-full h-full object-cover" />
+              {/* Show the composite when we have one (its URL lives in
+                  imagePreview after compositing), otherwise the cropped image,
+                  otherwise the original. object-contain at natural aspect so the
+                  full frame shows — matches the reconcile preview and never
+                  zooms/crops. */}
+              <div className="bg-muted flex items-center justify-center">
+                <img
+                  ref={imgRef}
+                  src={(compositeBlob ? imagePreview : croppedPreview || imagePreview) || undefined}
+                  alt="Outfit preview"
+                  className="w-full h-auto max-h-[70vh] object-contain block"
+                />
               </div>
             </Card>
             <div className="absolute top-2 right-2 flex gap-2">
@@ -823,7 +833,7 @@ export default function AddOutfit() {
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <Label htmlFor="date" className="text-sm">Date Worn</Label>
-                <Input id="date" type="date" value={dateWorn} onChange={(e) => setDateWorn(e.target.value)} data-testid="input-date" />
+                <Input id="date" type="date" value={dateWorn} onChange={(e) => setDateWorn(e.target.value)} className="block appearance-none text-left [&::-webkit-date-and-time-value]:text-left" data-testid="input-date" />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="notes" className="text-sm">Notes (optional)</Label>
