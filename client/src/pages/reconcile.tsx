@@ -321,6 +321,13 @@ export default function Reconcile() {
   const outfitId = params?.outfitId ? parseInt(params.outfitId) : null;
   const searchParams = new URLSearchParams(window.location.search);
   const detectedItemsParam = searchParams.get("items");
+  // Arrived here as the final step of the add-outfit flow (show the stepper +
+  // skip). `askDate` means the photo had no date, so ask the user to confirm.
+  const isNewFlow = searchParams.get("new") === "1";
+  const askDate = searchParams.get("askdate") === "1";
+
+  // Local date-worn state, used only when we need to ask (askDate).
+  const [dateWorn, setDateWorn] = useState("");
 
   const preset = getPreset();
   const [slots, setSlots] = useState<SlotState[]>(() => buildInitialSlots(preset));
@@ -350,6 +357,11 @@ export default function Reconcile() {
   const { data: existingItems } = useQuery<Item[]>({
     queryKey: ["/api/items"],
   });
+
+  // Prefill the date field from the saved outfit (used when askDate is set).
+  useEffect(() => {
+    if (outfit?.dateWorn) setDateWorn((prev) => prev || outfit.dateWorn);
+  }, [outfit?.dateWorn]);
 
   useEffect(() => {
     if (!outfit || !outfit.items || loadedExisting) return;
@@ -461,6 +473,10 @@ export default function Reconcile() {
       }
 
       await apiRequest("PUT", `/api/outfits/${outfitId}/items`, { itemIds });
+      // If we asked for the date (no EXIF), persist the confirmed value.
+      if (askDate && dateWorn && dateWorn !== outfit?.dateWorn) {
+        await apiRequest("PATCH", `/api/outfits/${outfitId}`, { dateWorn });
+      }
       return itemIds;
     },
     onSuccess: () => {
@@ -605,6 +621,18 @@ export default function Reconcile() {
     }
   };
 
+  // Skip tagging (add flow). The outfit is already saved; just persist the date
+  // if we asked for it, then go to the outfit.
+  const handleSkip = async () => {
+    if (askDate && dateWorn && dateWorn !== outfit?.dateWorn) {
+      try {
+        await apiRequest("PATCH", `/api/outfits/${outfitId}`, { dateWorn });
+        queryClient.invalidateQueries({ queryKey: ["/api/outfits"] });
+      } catch { /* non-fatal */ }
+    }
+    navigate(`/outfits/${outfitId}`);
+  };
+
   if (outfitLoading) {
     return (
       <div className="min-h-dvh bg-background flex items-center justify-center">
@@ -635,6 +663,20 @@ export default function Reconcile() {
       </header>
 
       <main className="p-4 pb-28 space-y-0">
+        {isNewFlow && (
+          <div className="space-y-1.5 mb-3" data-testid="flow-stepper">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-foreground">Step 3 of 3</span>
+              <span className="text-xs text-muted-foreground">Tag items</span>
+            </div>
+            <div className="flex gap-1">
+              {[1, 2, 3].map((n) => (
+                <div key={n} className="h-1 flex-1 rounded-full bg-primary" />
+              ))}
+            </div>
+          </div>
+        )}
+
         {outfit && (
           <Card
             className="overflow-hidden mb-3 cursor-pointer relative group"
@@ -652,6 +694,21 @@ export default function Reconcile() {
               <Maximize2 className="h-5 w-5 text-white opacity-0 group-hover:opacity-80 transition-opacity drop-shadow" />
             </div>
           </Card>
+        )}
+
+        {isNewFlow && askDate && (
+          <div className="mb-4 space-y-1.5">
+            <label htmlFor="date-worn" className="text-sm font-medium text-foreground">When did you wear this?</label>
+            <Input
+              id="date-worn"
+              type="date"
+              value={dateWorn}
+              onChange={(e) => setDateWorn(e.target.value)}
+              className="flex items-center appearance-none text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-date-and-time-value]:m-0 [&::-webkit-datetime-edit]:p-0"
+              data-testid="input-date-worn"
+            />
+            <p className="text-xs text-muted-foreground">We couldn't read a date from the photo.</p>
+          </div>
         )}
 
         {slots.map((slot, index) => {
@@ -835,7 +892,7 @@ export default function Reconcile() {
       </main>
 
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/95 backdrop-blur border-t">
-        <div className="max-w-md mx-auto">
+        <div className="max-w-md mx-auto space-y-2">
           <Button
             className="w-full gap-2"
             size="lg"
@@ -851,10 +908,21 @@ export default function Reconcile() {
             ) : (
               <>
                 <Check className="h-5 w-5" />
-                Save Outfit ({filledCount} items)
+                {isNewFlow ? `Done (${filledCount} tagged)` : `Save Outfit (${filledCount} items)`}
               </>
             )}
           </Button>
+          {isNewFlow && (
+            <Button
+              variant="ghost"
+              className="w-full"
+              onClick={handleSkip}
+              disabled={saveMutation.isPending}
+              data-testid="button-skip-tagging"
+            >
+              Skip for now
+            </Button>
+          )}
         </div>
       </div>
 

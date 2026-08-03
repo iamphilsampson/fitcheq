@@ -94,7 +94,9 @@ export default function AddOutfit() {
   // original rectangle — not just the cropped area.
   const [origDims, setOrigDims] = useState<{ w: number; h: number } | null>(null);
   const [dateWorn, setDateWorn] = useState(new Date().toISOString().split("T")[0]);
-  const [notes, setNotes] = useState("");
+  // Whether dateWorn came from the photo's EXIF metadata. When false we ask the
+  // user to confirm the date on the tagging step instead of guessing silently.
+  const [dateFromExif, setDateFromExif] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [showSignInPrompt, setShowSignInPrompt] = useState(false);
 
@@ -116,7 +118,6 @@ export default function AddOutfit() {
     try {
       const draft: OutfitDraft = JSON.parse(savedDraft);
       if (draft.dateWorn) setDateWorn(draft.dateWorn);
-      if (draft.notes) setNotes(draft.notes);
       // Restore image from data URL if available
       if (draft.imageDataUrl) {
         setImagePreview(draft.imageDataUrl);
@@ -170,6 +171,7 @@ export default function AddOutfit() {
     setIsBgPickerMode(false);
     setCutoutBlob(null);
     setIsCropping(true);
+    setDateFromExif(false);
     const reader = new FileReader();
     reader.onload = (e) => setImagePreview(e.target?.result as string);
     reader.readAsDataURL(file);
@@ -181,6 +183,7 @@ export default function AddOutfit() {
         const m = String(rawDate.getMonth() + 1).padStart(2, "0");
         const d = String(rawDate.getDate()).padStart(2, "0");
         setDateWorn(`${y}-${m}-${d}`);
+        setDateFromExif(true);
       }
     } catch { }
   };
@@ -244,10 +247,10 @@ export default function AddOutfit() {
     runBgRemoval(blob);
   };
 
-  // Crop + skip background removal → straight to the details step.
+  // Crop + skip background removal → save and go straight to tagging.
   const handleCropUseAsIs = async () => {
-    await applyCrop();
-    // isCropping is now false and no bg steps are active → preview/details shows.
+    const blob = await applyCrop();
+    if (blob) await finishAndTag(blob, "cropped");
   };
 
   const runBgRemoval = async (sourceOverride?: Blob) => {
@@ -315,9 +318,12 @@ export default function AddOutfit() {
     }
   };
 
-  const handleSkipBgRemoval = () => {
+  const handleSkipBgRemoval = async () => {
     setBgTimedOut(false);
     setIsRemoveBgStep(false);
+    // Save the (cropped) photo as-is and go to tagging.
+    const blob = croppedBlob ?? selectedImage;
+    if (blob) await finishAndTag(blob, croppedBlob ? "cropped" : "raw");
   };
 
   const handleCustomBgSoon = () => {
@@ -336,6 +342,8 @@ export default function AddOutfit() {
       setImagePreview(URL.createObjectURL(blob));
       setIsBgPickerMode(false);
       setCutoutBlob(null);
+      // Save and continue to tagging (keep the raw original for the toggle).
+      await finishAndTag(blob, "composite", selectedImage);
     } catch (err) {
       if (err instanceof CutoutNotTransparentError) {
         toast({
@@ -372,27 +380,19 @@ export default function AddOutfit() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleSubmit = async () => {
-    const hasImage = selectedImage || compositeBlob;
-    if (!hasImage) {
-      toast({ title: "No image selected", description: "Please select or capture an outfit photo", variant: "destructive" });
-      return;
-    }
-
-    // If user is not authenticated, show sign-in prompt and save draft to localStorage
+  // Save the outfit (date from EXIF or today, no notes) then go to the tagging
+  // step. `originalBlob` is the raw pre-edit photo to keep for composites.
+  const finishAndTag = async (
+    uploadBlob: Blob,
+    uploadSource: "composite" | "cropped" | "raw",
+    originalBlob: Blob | null = null,
+  ) => {
+    // Guest path: preserve the work and prompt to sign in.
     if (!isAuthenticated) {
-      const draft: OutfitDraft = { dateWorn, notes };
-      // Try to save image as base64 data URL so we can restore after sign-in
+      const draft: OutfitDraft = { dateWorn, notes: "" };
       try {
-        const blobToSave = compositeBlob || croppedBlob || (selectedImage || null);
-        if (blobToSave) {
-          draft.imageDataUrl = await blobToDataUrl(blobToSave);
-        } else if (croppedPreview && croppedPreview.startsWith("data:")) {
-          draft.imageDataUrl = croppedPreview;
-        }
-      } catch {
-        // If we can't serialize the image, just save date/notes
-      }
+        draft.imageDataUrl = await blobToDataUrl(uploadBlob);
+      } catch { /* fall back to date only */ }
       localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
       setShowSignInPrompt(true);
       return;
@@ -400,23 +400,7 @@ export default function AddOutfit() {
 
     setIsUploading(true);
     try {
-      let uploadBlob: Blob;
-      let uploadSource: "composite" | "cropped" | "raw";
-      if (compositeBlob) {
-        uploadBlob = compositeBlob;
-        uploadSource = "composite";
-      } else if (croppedBlob) {
-        uploadBlob = croppedBlob;
-        uploadSource = "cropped";
-      } else if (selectedImage) {
-        uploadBlob = selectedImage;
-        uploadSource = "raw";
-      } else {
-        throw new Error("No image available");
-      }
-      console.info(
-        `[upload-outfit] source=${uploadSource} bytes=${uploadBlob.size}`
-      );
+      console.info(`[upload-outfit] source=${uploadSource} bytes=${uploadBlob.size}`);
 
       const urlRes = await fetch("/api/uploads/request-url", {
         method: "POST",
@@ -429,41 +413,34 @@ export default function AddOutfit() {
       const upRes = await fetch(uploadURL, { method: "PUT", body: uploadBlob, headers: { "Content-Type": "image/jpeg" } });
       if (!upRes.ok) throw new Error("Failed to upload image");
 
-      // If we composited onto a chosen background, also upload the truly raw
-      // original (pre-crop, pre-bg-removal) so the outfit detail page can
-      // offer a "View original" toggle later. For cropped/raw uploads, the
-      // displayed image IS the original — nothing extra to store.
+      // For composites, also keep the raw original so outfit detail can offer a
+      // "View original" toggle. Cropped/raw uploads ARE the original already.
       let originalImageUrl: string | null = null;
       let originalUploadFailed = false;
-      if (uploadSource === "composite" && selectedImage) {
+      if (originalBlob) {
         try {
           const origRes = await fetch("/api/uploads/request-url", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              name: selectedImage.name ?? "outfit-original.jpg",
-              size: selectedImage.size,
-              contentType: selectedImage.type || "image/jpeg",
+              name: "outfit-original.jpg",
+              size: originalBlob.size,
+              contentType: originalBlob.type || "image/jpeg",
             }),
           });
           if (origRes.ok) {
             const { uploadURL: origUrl, objectPath: origPath } = await origRes.json();
             const origUp = await fetch(origUrl, {
               method: "PUT",
-              body: selectedImage,
-              headers: { "Content-Type": selectedImage.type || "image/jpeg" },
+              body: originalBlob,
+              headers: { "Content-Type": originalBlob.type || "image/jpeg" },
             });
-            if (origUp.ok) {
-              originalImageUrl = origPath;
-              console.info(`[upload-outfit] original bytes=${selectedImage.size} path=${origPath}`);
-            } else {
-              originalUploadFailed = true;
-            }
+            if (origUp.ok) originalImageUrl = origPath;
+            else originalUploadFailed = true;
           } else {
             originalUploadFailed = true;
           }
         } catch (origErr) {
-          // Non-fatal: outfit still saves with just the composite.
           originalUploadFailed = true;
           console.warn("[upload-outfit] failed to upload original photo:", origErr);
         }
@@ -472,35 +449,35 @@ export default function AddOutfit() {
       const outfitRes = await fetch("/api/outfits", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullImageUrl: objectPath, originalImageUrl, dateWorn, notes: notes || null }),
+        body: JSON.stringify({ fullImageUrl: objectPath, originalImageUrl, dateWorn, notes: null }),
       });
       if (!outfitRes.ok) throw new Error("Failed to create outfit");
 
       const outfit = await outfitRes.json();
-      // Clear any guest draft after successful save
       localStorage.removeItem(DRAFT_STORAGE_KEY);
-      // Soft-fail notice: outfit saved fine, but the user won't have the
-      // "View original" toggle on this one. Non-blocking by design.
       if (originalUploadFailed) {
         toast({
           title: "Saved without original",
           description: "We couldn't keep a copy of the raw photo. The composite was saved.",
         });
       }
-      navigate(`/reconcile/${outfit.id}`);
+      // Go straight to tagging as the final step. Ask for the date there only
+      // when we couldn't read it from the photo's metadata.
+      navigate(`/reconcile/${outfit.id}?new=1${dateFromExif ? "" : "&askdate=1"}`);
     } catch (error) {
       toast({ title: "Upload failed", description: error instanceof Error ? error.message : "Something went wrong", variant: "destructive" });
+      // Escape the "Saving…" screen back to crop so the user can retry.
+      setIsCropping(true);
     } finally {
       setIsUploading(false);
     }
   };
 
-  const hasReadyImage = !!(selectedImage || compositeBlob);
-
   // Flow step for the progress indicator. 0 = pre-flow (pick a photo).
-  // 1 Crop · 2 Background (removing + picker) · 3 Details.
-  const flowStep = isCropping ? 1 : (isRemoveBgStep || isBgPickerMode) ? 2 : imagePreview ? 3 : 0;
-  const STEP_LABELS = ["", "Crop", "Background", "Details"];
+  // 1 Crop · 2 Background · 3 Tag items (the last step lives on the reconcile
+  // page). In this screen we're only ever on step 1 or 2.
+  const flowStep = isCropping ? 1 : imagePreview ? 2 : 0;
+  const STEP_LABELS = ["", "Crop", "Background", "Tag items"];
   const TOTAL_STEPS = 3;
 
   const handleBack = () => {
@@ -645,7 +622,7 @@ export default function AddOutfit() {
             <Button className="w-full gap-2" size="lg" onClick={handleComposite} disabled={isCompositing} data-testid="button-use-background">
               {isCompositing
                 ? <><Loader2 className="h-5 w-5 animate-spin" /> Applying background...</>
-                : <>Next: Add details <ArrowRight className="h-5 w-5" /></>}
+                : <>Next: Tag items <ArrowRight className="h-5 w-5" /></>}
             </Button>
           </div>
 
@@ -764,55 +741,19 @@ export default function AddOutfit() {
           </div>
 
         ) : (
-          // Step 5: Preview + submit
-          <div className="relative">
-            <Card className="overflow-hidden">
-              {/* Show the composite when we have one (its URL lives in
-                  imagePreview after compositing), otherwise the cropped image,
-                  otherwise the original. object-contain at natural aspect so the
-                  full frame shows — matches the reconcile preview and never
-                  zooms/crops. */}
-              <div className="bg-muted flex items-center justify-center">
-                <img
-                  ref={imgRef}
-                  src={(compositeBlob ? imagePreview : croppedPreview || imagePreview) || undefined}
-                  alt="Outfit preview"
-                  className="w-full h-auto max-h-[70vh] object-contain block"
-                />
-              </div>
-            </Card>
-            <div className="absolute top-2 right-2 flex gap-2">
-              {!compositeBlob && (
-                <Button variant="secondary" size="icon" className="rounded-full shadow-md h-8 w-8" onClick={() => setIsCropping(true)} data-testid="button-recrop">
-                  <Crop className="h-4 w-4" />
-                </Button>
-              )}
-              <Button variant="secondary" size="icon" className="rounded-full shadow-md h-8 w-8" onClick={clearImage} data-testid="button-clear-image">
-                <X className="h-4 w-4" />
-              </Button>
+          // Finalizing: crop/composite is done, the outfit is being saved, then
+          // we move to the tagging step. No date/notes step any more.
+          <div className="relative rounded-xl overflow-hidden bg-muted flex items-center justify-center min-h-[40vh]">
+            <img
+              src={(compositeBlob ? imagePreview : croppedPreview || imagePreview) || undefined}
+              alt="Outfit preview"
+              className="w-full h-auto max-h-[70vh] object-contain block opacity-40"
+            />
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center">
+              <Loader2 className="h-9 w-9 animate-spin text-primary" />
+              <p className="text-sm font-semibold text-foreground">Saving your outfit…</p>
             </div>
-            {compositeBlob && (
-              <p className="text-xs text-muted-foreground text-center mt-2">{BACKGROUNDS[selectedBg].name} background</p>
-            )}
           </div>
-        )}
-
-        {imagePreview && !isCropping && !isRemoveBgStep && !isBgPickerMode && (
-          <>
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="date" className="text-sm">Date Worn</Label>
-                <Input id="date" type="date" value={dateWorn} onChange={(e) => setDateWorn(e.target.value)} className="flex items-center appearance-none text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-date-and-time-value]:m-0 [&::-webkit-datetime-edit]:p-0" data-testid="input-date" />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="notes" className="text-sm">Notes (optional)</Label>
-                <Textarea id="notes" placeholder="Where did you wear this? Any occasion?" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} data-testid="input-notes" />
-              </div>
-            </div>
-            <Button className="w-full gap-2" size="lg" onClick={handleSubmit} disabled={!hasReadyImage || isUploading || isCropping} data-testid="button-submit">
-              {isUploading ? <><Loader2 className="h-5 w-5 animate-spin" /> Saving...</> : <><Upload className="h-5 w-5" /> Save Outfit</>}
-            </Button>
-          </>
         )}
       </main>
     </div>
