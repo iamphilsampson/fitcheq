@@ -35,16 +35,25 @@ Migrated off Replit → local dev + Railway (July 2026). Kept Postgres.
   `/data/uploads`); seed once from `export/photos/` (34 files).
 
 ## Data
-- `export/database_dump.sql` = full pg dump (23 items, 5 outfits, 1 user, history).
-  Restore: `createdb fitcheck && psql fitcheck < export/database_dump.sql`.
-- Off-repo backup of dump + photos: `../_fitcheq_staging/`.
+- **Real data** = `export/database_dump_production.sql` (11 outfits, 32 items, 52
+  tags, 1 user, history) — data-only (TRUNCATE+INSERT). Restore order: create the
+  schema first (`export/database_dump.sql` or `npm run db:push`), then run this file.
+- `export/database_dump.sql` = original DEV dump; schema source only, its 5-outfit
+  data is stale — do not treat as real.
+- `export/photos/` = the 34 object-storage images (cover all outfit UUIDs).
+- Off-repo backup: `../_fitcheq_staging/`.
 
 ## Env (`.env` locally / Railway variables) — see `.env.example`
 `DATABASE_URL`, `SESSION_SECRET`, `APP_PASSWORD`, `UPLOAD_DIR`, `NODE_ENV`,
 optional `REPLICATE_API_KEY` (bg removal; client falls back to WASM if absent),
 `OPENAI_API_KEY` + `APP_BASE_URL` (clothing detection; needs a public URL).
 
-## Migration status
-- ✅ Phase 1 (local): auth + photos + DB swapped, runs & verified on localhost.
-  Branch `migrate-off-replit` (not yet committed/pushed at time of writing).
-- ⏳ Phase 2 (Railway): managed Postgres + volume + env vars + build/deploy config.
+## Migration status — COMPLETE (Aug 2026)
+Live at **https://fitcheq-production.up.railway.app** (Railway project `fitcheq`).
+- Managed Postgres, **private networking only** — the public TCP proxy is
+  intentionally OFF. To do one-off external DB work: Postgres → Settings →
+  Networking → Add Public Access, use `DATABASE_PUBLIC_URL`, then remove it again.
+- Volume `fitcheq-volume` at `/data`; `UPLOAD_DIR=/data/uploads`, seeded from
+  `export/photos` on boot.
+- Redeploy from here: `railway up -s fitcheq` (CLI is linked to the project).
+- Work is on branch `migrate-off-replit` (local commits; not pushed to GitHub).
