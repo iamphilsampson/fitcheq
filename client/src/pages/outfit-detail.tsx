@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRoute, useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Tag, X, MoreVertical, Trash2, Camera, Image as ImageIcon, ChevronLeft, ChevronRight, Wand2, Upload, History } from "lucide-react";
+import { ArrowLeft, Loader2, Tag, X, MoreVertical, Trash2, Camera, Image as ImageIcon, ChevronLeft, ChevronRight, Wand2, Upload, History, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -330,6 +330,16 @@ export default function OutfitDetail() {
     setSelectedBg(0);
   };
 
+  // From the picker → back to the cutout editor, edits preserved (cutoutBlob).
+  const backToCleanup = () => {
+    setIsBgPickerMode(false);
+    setIsCleanupStep(true);
+  };
+
+  const handleCustomBgSoon = () => {
+    toast({ title: "Coming soon", description: "You'll be able to upload your own background here." });
+  };
+
   // Skip bg removal → upload the selected file as-is
   const handleSkipBgRemoval = () => {
     if (isCurrentPhotoBgFlow) {
@@ -599,35 +609,53 @@ export default function OutfitDetail() {
             <CutoutEditor cutoutBlob={cutoutBlob} onDone={handleCleanupDone} />
 
           ) : isBgPickerMode && cutoutBlob ? (
-            // Background picker
+            // Background picker — mirrors the Add Outfit flow (translucent bar
+            // over a 3:4 preview, "Your own" placeholder, edit-cutout back).
             <div className="space-y-4">
-              <div className="rounded-xl overflow-hidden bg-muted">
+              <p className="text-sm font-medium text-foreground">Pick a background</p>
+
+              <div className="relative rounded-xl overflow-hidden bg-muted flex items-center justify-center">
                 <canvas
                   ref={previewCanvasRef}
-                  width={300}
-                  height={400}
-                  className="w-full"
-                  style={{ aspectRatio: "3/4", display: "block" }}
+                  width={450}
+                  height={600}
+                  className="max-w-full max-h-[60vh] w-auto h-auto"
+                  style={{ aspectRatio: "450 / 600", display: "block" }}
                   data-testid="canvas-preview"
                 />
-              </div>
 
-              <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1">
-                {BACKGROUNDS.map((bg, i) => (
-                  <button
-                    key={bg.name}
-                    onClick={() => setSelectedBg(i)}
-                    className={`flex-shrink-0 flex flex-col items-center gap-1.5 transition-opacity ${selectedBg === i ? "opacity-100" : "opacity-55 hover:opacity-80"}`}
-                    data-testid={`button-bg-${i}`}
-                    title={bg.name}
-                  >
-                    <span
-                      className={`block w-12 h-12 shrink-0 aspect-square rounded-full border-2 box-border transition-all ${selectedBg === i ? "border-foreground scale-110 shadow-md" : "border-transparent"}`}
-                      style={{ background: bg.css }}
-                    />
-                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">{bg.name}</span>
-                  </button>
-                ))}
+                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/45 via-black/20 to-transparent backdrop-blur-[1px]">
+                  <div className="flex gap-3 overflow-x-auto px-3 py-2.5">
+                    {BACKGROUNDS.map((bg, i) => (
+                      <button
+                        key={bg.name}
+                        onClick={() => setSelectedBg(i)}
+                        className="flex-shrink-0 flex flex-col items-center gap-1"
+                        data-testid={`button-bg-${i}`}
+                        title={bg.name}
+                      >
+                        <span
+                          className={`block w-11 h-11 shrink-0 aspect-square rounded-full border-2 box-border transition-all ${selectedBg === i ? "border-white scale-110 shadow-md" : "border-white/40"}`}
+                          style={{ background: bg.css }}
+                        />
+                        <span className="text-[10px] text-white/90 whitespace-nowrap">{bg.name}</span>
+                      </button>
+                    ))}
+
+                    <button
+                      onClick={handleCustomBgSoon}
+                      className="flex-shrink-0 flex flex-col items-center gap-1"
+                      data-testid="button-bg-custom"
+                      title="Your own background (coming soon)"
+                    >
+                      <span className="relative flex w-11 h-11 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-white/50 text-white/80">
+                        <Plus className="h-5 w-5" />
+                        <span className="absolute -top-1 -right-1 rounded-full bg-white/90 px-1 text-[8px] font-bold uppercase tracking-wide text-zinc-900">soon</span>
+                      </span>
+                      <span className="text-[10px] text-white/90 whitespace-nowrap">Your own</span>
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <Button
@@ -642,6 +670,15 @@ export default function OutfitDetail() {
                   : isReuploading
                     ? <><Loader2 className="h-5 w-5 animate-spin" /> Uploading...</>
                     : <><Upload className="h-5 w-5" /> Use this background</>}
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full gap-2"
+                onClick={backToCleanup}
+                disabled={isCompositing || isReuploading}
+                data-testid="button-edit-cutout"
+              >
+                <ArrowLeft className="h-4 w-4" /> Edit cut-out
               </Button>
             </div>
 

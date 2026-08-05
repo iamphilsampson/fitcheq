@@ -652,6 +652,15 @@ export default function AddOutfit() {
                 ? <><Loader2 className="h-5 w-5 animate-spin" /> Applying background...</>
                 : <>Next: Tag items <ArrowRight className="h-5 w-5" /></>}
             </Button>
+            <Button
+              variant="ghost"
+              className="w-full gap-2"
+              onClick={() => { setIsBgPickerMode(false); setIsCleanupStep(true); }}
+              disabled={isCompositing}
+              data-testid="button-edit-cutout"
+            >
+              <ArrowLeft className="h-4 w-4" /> Edit cut-out
+            </Button>
           </div>
 
         ) : isRemoveBgStep ? (
