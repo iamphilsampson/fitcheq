@@ -1,0 +1,51 @@
+[
+  {
+    "outfitId": 10,
+    "file": "10.jpg",
+    "sourceFile": "IMG_0396.HEIC",
+    "date": "2026-03-25",
+    "note": "manual override"
+  },
+  {
+    "outfitId": 4,
+    "file": "4.jpg",
+    "sourceFile": "IMG_9774.HEIC",
+    "date": "2026-01-24",
+    "note": "manual override"
+  },
+  {
+    "outfitId": 3,
+    "file": "3.jpg",
+    "sourceFile": "IMG_9900.HEIC",
+    "date": "2026-02-11",
+    "note": "manual override"
+  },
+  {
+    "outfitId": 2,
+    "file": "2.jpg",
+    "sourceFile": "IMG_0018.HEIC",
+    "date": "2026-02-25",
+    "note": "exact date match"
+  },
+  {
+    "outfitId": 1,
+    "file": "1.jpg",
+    "sourceFile": "IMG_0136.HEIC",
+    "date": "2026-03-05",
+    "note": "exact date match"
+  },
+  {
+    "outfitId": 5,
+    "file": "5.jpg",
+    "sourceFile": "IMG_0285.HEIC",
+    "date": "2026-03-14",
+    "note": "exact date match"
+  },
+  {
+    "outfitId": 7,
+    "file": "7.jpg",
+    "sourceFile": "IMG_0335.HEIC",
+    "date": "2026-03-16",
+    "note": "exact date match"
+  }
+]

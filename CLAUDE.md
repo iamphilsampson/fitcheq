@@ -79,13 +79,28 @@ temporary public proxy, see below).
 in-app browser can't hold the login session; test auth-gated flows on staging.
 
 ## Git
-Branch **`migrate-off-replit`** (pushed to `origin`, tracking). `main` still only
-has the original Replit push. Consider merging + GitHub auto-deploy later.
+`migrate-off-replit` was fast-forward **merged into `main`** (Aug 2026); `main` is now
+the canonical branch (pushed to `origin`). Deploys stay **manual** via `railway up` —
+GitHub auto-deploy is deliberately not wired up yet (would make every push to `main`
+deploy straight to prod). Wire it from the Railway dashboard if/when wanted.
 
 ## Add-outfit flow (redesigned Aug 2026) — `pages/add-outfit.tsx` + `reconcile.tsx`
 3 steps with a progress indicator: **Crop → Background → Tag items**.
-- Crop screen offers **Remove background** (crop + auto bg-removal → colour picker)
-  or **Use photo as-is** (crop → save). No standalone remove-bg gate.
+- Crop screen offers **Remove background** (crop + auto bg-removal → clean-up → colour
+  picker) or **Use photo as-is** (crop → save). No standalone remove-bg gate.
+- **Clean-up step** (`components/CutoutEditor.tsx`): optional manual tidy of the cutout
+  between auto bg-removal and the colour picker. Two touch tools — **Erase** brush
+  (adjustable size) and **Lasso** cut (freeform loop, erases inside) — plus undo +
+  reset; checkerboard shows what's transparent. Part of the Background step (no extra
+  step number). "Next: Background" returns an edited PNG, or `null` if untouched (skip).
+  Edits happen at ≤1600px long side (matches the composite frame). Used in **both** the
+  add flow and outfit-detail's Remove-bg / Replace-photo flows.
+- **Stored "original"** = the **cropped, pre-composite** photo (add flow) or a 2000px
+  downscale of a replaced photo (outfit-detail) — not the full raw. Smaller, and has no
+  baked-in background so a re-clean starts from a clean source. `imageUtils.downscaleImageBlob`.
+- **Re-clean from original**: outfit-detail's ⋮ → Remove Background sources from
+  `originalImageUrl` when present (pristine), falling back to the current image only when
+  no original was stored — avoids compounding composite loss.
 - Colour picker: translucent scrollable swatch bar over the image bottom; `+ Your
   own` tile is a coming-soon placeholder (toast only).
 - Compositing outputs a fixed **portrait 3:4 frame**, background filling it, subject
@@ -101,3 +116,13 @@ has the original Replit push. Consider merging + GitHub auto-deploy later.
 - **Upload your own background** image/colour (the `+ Your own` tile).
 - Colour bar not yet mirrored into outfit-detail's Replace/Remove-bg picker.
 - Optional **batch reprocess** of old tall images (needs a browser for the WASM model).
+
+### Backfilling originals for old outfits (Aug 2026)
+9 of 11 prod outfits (IDs 1-5,7-10) have `original_image_url = NULL`; only 12 & 14 have
+one. To retrofit clean sources so those can be re-cleaned in-app from a pristine photo:
+drop raw photos in `export/originals_retrofit/incoming/`, run `scripts/match-originals.mjs`
+(matches to outfits by EXIF date; dry-run then `--write` to emit `<outfitId>.jpg` + mapping.json),
+then an apply step uploads them to the volume + sets `original_image_url` (staging first).
+Note the **2026-03-25** collision — outfits 8 & 10 share a date, so those two need confirming.
+AI bg-removal can't run server-side here (no `REPLICATE_API_KEY`, model is browser-WASM), so
+the actual remove-bg + erase/lasso stays a per-outfit in-app step after backfill.

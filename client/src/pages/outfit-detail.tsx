@@ -23,8 +23,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, measureCutoutTransparency, CutoutNotTransparentError, type BgRemovalProgress } from "@/lib/imageUtils";
+import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, measureCutoutTransparency, downscaleImageBlob, CutoutNotTransparentError, type BgRemovalProgress } from "@/lib/imageUtils";
 import { Progress } from "@/components/ui/progress";
+import CutoutEditor from "@/components/CutoutEditor";
 import type { Outfit, Item } from "@shared/schema";
 
 interface OutfitWithItems extends Outfit {
@@ -59,6 +60,9 @@ export default function OutfitDetail() {
   const [isRemovingBg, setIsRemovingBg] = useState(false);
   const [bgProgress, setBgProgress] = useState<BgRemovalProgress | null>(null);
   const [cutoutBlob, setCutoutBlob] = useState<Blob | null>(null);
+  // Optional manual cleanup (erase/lasso) of the cutout, between bg-removal and
+  // the background picker — mirrors the add-outfit flow.
+  const [isCleanupStep, setIsCleanupStep] = useState(false);
   const [isBgPickerMode, setIsBgPickerMode] = useState(false);
   const [selectedBg, setSelectedBg] = useState(0);
   const [isCompositing, setIsCompositing] = useState(false);
@@ -159,6 +163,7 @@ export default function OutfitDetail() {
     setIsRemovingBg(false);
     setBgProgress(null);
     setCutoutBlob(null);
+    setIsCleanupStep(false);
     setIsBgPickerMode(false);
     setIsCompositing(false);
     setIsCurrentPhotoBgFlow(false);
@@ -277,7 +282,7 @@ export default function OutfitDetail() {
   const handleRemoveBg = async () => {
     if (cutoutBlob) {
       setIsRemoveBgStep(false);
-      setIsBgPickerMode(true);
+      setIsCleanupStep(true);
       setSelectedBg(0);
       return;
     }
@@ -298,7 +303,7 @@ export default function OutfitDetail() {
       }
       setCutoutBlob(cutout);
       setIsRemoveBgStep(false);
-      setIsBgPickerMode(true);
+      setIsCleanupStep(true);
       setSelectedBg(0);
     } catch (err) {
       if (!bgRemovalActiveRef.current) return; // stale error, flow already reset
@@ -317,6 +322,14 @@ export default function OutfitDetail() {
     }
   };
 
+  // Leaving the optional cleanup step → continue to the background picker.
+  const handleCleanupDone = (edited: Blob | null) => {
+    if (edited) setCutoutBlob(edited);
+    setIsCleanupStep(false);
+    setIsBgPickerMode(true);
+    setSelectedBg(0);
+  };
+
   // Skip bg removal → upload the selected file as-is
   const handleSkipBgRemoval = () => {
     if (isCurrentPhotoBgFlow) {
@@ -333,10 +346,18 @@ export default function OutfitDetail() {
     try {
       const blob = await compositeOnBackground(cutoutBlob, selectedBg);
       setIsCompositing(false); // switch button to "Uploading..." state
-      // If a fresh raw photo was just picked (Replace Photo), preserve it as
-      // the new original. If we're re-removing bg from the current outfit
-      // photo (no fresh raw available), leave originalImageUrl untouched.
-      const originalForUpload = isCurrentPhotoBgFlow ? null : selectedFileBlob;
+      // If a fresh photo was just picked (Replace Photo), preserve a downscaled
+      // copy as the new original (smaller than a raw phone shot, still a clean
+      // re-clean source). If we're re-removing bg from the current outfit photo,
+      // leave originalImageUrl untouched.
+      let originalForUpload: Blob | null = null;
+      if (!isCurrentPhotoBgFlow && selectedFileBlob) {
+        try {
+          originalForUpload = await downscaleImageBlob(selectedFileBlob, 2000, 0.9);
+        } catch {
+          originalForUpload = selectedFileBlob;
+        }
+      }
       await uploadBlobAndPatch(blob, "composite", originalForUpload);
     } catch (err) {
       if (err instanceof CutoutNotTransparentError) {
@@ -359,16 +380,21 @@ export default function OutfitDetail() {
     bgRemovalActiveRef.current = true;
     setShowPhotoOptions(true);
     setIsCurrentPhotoBgFlow(true);
-    setSelectedFilePreview(outfit.fullImageUrl);
+    // Prefer the stored original (pristine, no baked-in background) over the
+    // current composite — re-running removal on a composite compounds quality
+    // loss. Falls back to the current photo when no original was stored.
+    const source = outfit.originalImageUrl ?? outfit.fullImageUrl;
+    setSelectedFilePreview(source);
     setIsRemoveBgStep(true);
     setIsRemovingBg(true);
     setBgProgress(null);
     try {
-      const res = await fetch(outfit.fullImageUrl);
+      const res = await fetch(source);
       if (!bgRemovalActiveRef.current) return; // user exited the flow
-      if (!res.ok) throw new Error("Failed to fetch current photo");
+      if (!res.ok) throw new Error("Failed to fetch source photo");
       const blob = await res.blob();
       if (!bgRemovalActiveRef.current) return; // user exited the flow
+      console.info(`[bg-removal] re-clean source=${outfit.originalImageUrl ? "original" : "current"} bytes=${blob.size}`);
       const cutout = await removeBgFromBlob(blob, (p) => {
         if (bgRemovalActiveRef.current) setBgProgress(p);
       });
@@ -380,7 +406,7 @@ export default function OutfitDetail() {
       }
       setCutoutBlob(cutout);
       setIsRemoveBgStep(false);
-      setIsBgPickerMode(true);
+      setIsCleanupStep(true);
       setSelectedBg(0);
     } catch (err) {
       if (!bgRemovalActiveRef.current) return; // stale error, flow already reset
@@ -403,9 +429,18 @@ export default function OutfitDetail() {
   // Back button / cancel logic
   const cancelPhotoEdit = () => {
     if (isBgPickerMode) {
-      // From bg picker → back to bg removal choice (cutout preserved to skip re-inference)
+      // From bg picker → back to the cleanup step (cutout preserved).
       setIsBgPickerMode(false);
-      setIsRemoveBgStep(true);
+      setIsCleanupStep(true);
+    } else if (isCleanupStep) {
+      // From cleanup → back to the removal choice (Replace flow, cutout cached to
+      // skip re-inference) or exit entirely (current-photo flow has no choice UI).
+      setIsCleanupStep(false);
+      if (isCurrentPhotoBgFlow) {
+        resetPhotoEditState();
+      } else {
+        setIsRemoveBgStep(true);
+      }
     } else if (isRemoveBgStep && !isCurrentPhotoBgFlow) {
       // From bg removal choice (Replace Photo flow) → back to source picker.
       // Cancel any in-flight ML model run so its result is discarded.
@@ -487,6 +522,7 @@ export default function OutfitDetail() {
   // Derive header title from current editing state
   let headerTitle = formattedDate;
   if (isBgPickerMode) headerTitle = "Pick a background";
+  else if (isCleanupStep) headerTitle = "Clean up";
   else if (isRemoveBgStep || showPhotoOptions) headerTitle = isCurrentPhotoBgFlow ? "Remove Background" : "Replace Photo";
 
   return (
@@ -558,7 +594,11 @@ export default function OutfitDetail() {
 
       <main className="p-4 space-y-4">
         {showPhotoOptions ? (
-          isBgPickerMode && cutoutBlob ? (
+          isCleanupStep && cutoutBlob ? (
+            // Optional manual cleanup of the cutout (erase / lasso).
+            <CutoutEditor cutoutBlob={cutoutBlob} onDone={handleCleanupDone} />
+
+          ) : isBgPickerMode && cutoutBlob ? (
             // Background picker
             <div className="space-y-4">
               <div className="rounded-xl overflow-hidden bg-muted">

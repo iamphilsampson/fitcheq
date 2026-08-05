@@ -10,3 +10,7 @@ export/photos.zip
 .env
 .env.local
 uploads
+
+# Retrofit: raw dropped photos stay local; only the downscaled <id>.jpg +
+# mapping.json are committed (they ship to the container for apply-originals).
+export/originals_retrofit/incoming

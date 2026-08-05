@@ -249,6 +249,41 @@ export async function removeBgFromBlob(
   return result;
 }
 
+/**
+ * Downscale (never upscale) an image blob to `maxLongSide` and re-encode as
+ * JPEG. Used to keep stored "original" photos small — a re-uploaded 24MP phone
+ * shot doesn't need to persist at full resolution to serve as a re-clean source.
+ */
+export async function downscaleImageBlob(
+  sourceBlob: Blob,
+  maxLongSide = 2000,
+  quality = 0.9,
+): Promise<Blob> {
+  return new Promise<Blob>((resolve, reject) => {
+    const url = URL.createObjectURL(sourceBlob);
+    const img = new Image();
+    img.onload = () => {
+      const longest = Math.max(img.naturalWidth, img.naturalHeight);
+      const scale = longest > maxLongSide ? maxLongSide / longest : 1;
+      const w = Math.max(1, Math.round(img.naturalWidth * scale));
+      const h = Math.max(1, Math.round(img.naturalHeight * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(
+        (blob) => { if (blob) resolve(blob); else reject(new Error("Canvas empty")); },
+        "image/jpeg",
+        quality
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Image load failed")); };
+    img.src = url;
+  });
+}
+
 export type CropRect = { x: number; y: number; w: number; h: number };
 
 /**

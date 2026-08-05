@@ -12,6 +12,7 @@ import ReactCrop, { type Crop as CropType } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
 import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, cropImageBlob, measureCutoutTransparency, BgRemovalTimeoutError, CutoutNotTransparentError, type BgRemovalProgress, type CropRect } from "@/lib/imageUtils";
 import { Progress } from "@/components/ui/progress";
+import CutoutEditor from "@/components/CutoutEditor";
 import { useAuth } from "@/hooks/use-auth";
 import {
   Dialog,
@@ -105,6 +106,9 @@ export default function AddOutfit() {
   const [bgProgress, setBgProgress] = useState<BgRemovalProgress | null>(null);
   const [bgTimedOut, setBgTimedOut] = useState(false);
   const [cutoutBlob, setCutoutBlob] = useState<Blob | null>(null);
+  // Optional manual cleanup of the cutout (erase/lasso) between bg-removal and
+  // the background picker. Part of the "Background" step — no extra step number.
+  const [isCleanupStep, setIsCleanupStep] = useState(false);
   const [isBgPickerMode, setIsBgPickerMode] = useState(false);
   const [selectedBg, setSelectedBg] = useState(0);
   const [compositeBlob, setCompositeBlob] = useState<Blob | null>(null);
@@ -168,6 +172,7 @@ export default function AddOutfit() {
     setOrigDims(null);
     setCompositeBlob(null);
     setIsRemoveBgStep(false);
+    setIsCleanupStep(false);
     setIsBgPickerMode(false);
     setCutoutBlob(null);
     setIsCropping(true);
@@ -258,7 +263,7 @@ export default function AddOutfit() {
     // cropped source always means we want to re-run against the new crop).
     if (!sourceOverride && cutoutBlob) {
       setIsRemoveBgStep(false);
-      setIsBgPickerMode(true);
+      setIsCleanupStep(true);
       setSelectedBg(0);
       return;
     }
@@ -292,7 +297,7 @@ export default function AddOutfit() {
       }
       setCutoutBlob(cutout);
       setIsRemoveBgStep(false);
-      setIsBgPickerMode(true);
+      setIsCleanupStep(true);
       setSelectedBg(0);
       setCompositeBlob(null);
     } catch (err) {
@@ -326,6 +331,16 @@ export default function AddOutfit() {
     if (blob) await finishAndTag(blob, croppedBlob ? "cropped" : "raw");
   };
 
+  // Leaving the optional cleanup step. `edited` is a fresh cutout when the user
+  // erased/lassoed anything, else null (keep the original cutout untouched).
+  const handleCleanupDone = (edited: Blob | null) => {
+    if (edited) setCutoutBlob(edited);
+    setIsCleanupStep(false);
+    setIsBgPickerMode(true);
+    setSelectedBg(0);
+    setCompositeBlob(null);
+  };
+
   const handleCustomBgSoon = () => {
     toast({ title: "Coming soon", description: "You'll be able to upload your own background here." });
   };
@@ -342,8 +357,11 @@ export default function AddOutfit() {
       setImagePreview(URL.createObjectURL(blob));
       setIsBgPickerMode(false);
       setCutoutBlob(null);
-      // Save and continue to tagging (keep the raw original for the toggle).
-      await finishAndTag(blob, "composite", selectedImage);
+      // Save and continue to tagging. Keep the CROPPED (pre-composite) version as
+      // the "original" — it has no baked-in background, so a later re-clean starts
+      // from a clean source, and it's far smaller than the raw phone photo. Falls
+      // back to the raw file only if the cropped blob is somehow missing.
+      await finishAndTag(blob, "composite", croppedBlob ?? selectedImage);
     } catch (err) {
       if (err instanceof CutoutNotTransparentError) {
         toast({
@@ -375,6 +393,7 @@ export default function AddOutfit() {
     setIsRemovingBg(false);
     setBgTimedOut(false);
     setCutoutBlob(null);
+    setIsCleanupStep(false);
     setIsBgPickerMode(false);
     setCompositeBlob(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -483,8 +502,13 @@ export default function AddOutfit() {
   const handleBack = () => {
     if (isBgPickerMode) {
       // Background removal is automatic now, so "back" from the picker returns
-      // to the crop step. applyCrop clears the cached cutout if they re-crop.
+      // to the cleanup step (re-erase), which itself can go back to crop.
       setIsBgPickerMode(false);
+      setIsRemoveBgStep(false);
+      setIsCleanupStep(true);
+    } else if (isCleanupStep) {
+      // Back from cleanup returns to crop (re-crop clears the cached cutout).
+      setIsCleanupStep(false);
       setIsRemoveBgStep(false);
       setIsCropping(true);
     } else if (isRemoveBgStep) {
@@ -562,7 +586,11 @@ export default function AddOutfit() {
           </div>
         )}
 
-        {isBgPickerMode && cutoutBlob ? (
+        {isCleanupStep && cutoutBlob ? (
+          // Part of step 2 (Background): optional manual cleanup of the cutout.
+          <CutoutEditor cutoutBlob={cutoutBlob} onDone={handleCleanupDone} />
+
+        ) : isBgPickerMode && cutoutBlob ? (
           // Step 4: Background picker
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-2">
