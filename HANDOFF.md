@@ -152,3 +152,35 @@ development`. See `.env.example`.
   `hooks/use-upload.ts`, `components/ObjectUploader.tsx`, `lib/queryClient.ts`.
 - `shared/` — Drizzle schema. `export/` — dumps + photos. `client/public/` — icons +
   manifest + favicon.
+- `scripts/seed-staging.cjs` — one-off staging DB seed (added this session).
+
+## 12. Session 2026-08-05 — staging env + add-flow redesign (all on prod)
+See `CLAUDE.md` "Environments & deploy" + "Add-outfit flow" for the living detail.
+This session (branch `migrate-off-replit`, **pushed** to GitHub; deployed to both
+staging and production):
+
+**Infra**
+- Created a **staging** Railway environment (fork of production): own Postgres,
+  volume, and public URL `fitcheq-staging.up.railway.app`. Seeded via
+  `scripts/seed-staging.cjs` (run through `railway ssh`). Deploy loop is now
+  `railway up -e staging` → test → `railway up -e production`.
+- **Env banner**: non-prod hosts show a black STAGING/LOCAL banner
+  (`client/src/lib/env.ts`, `components/EnvBanner.tsx`, `.has-env-banner` CSS).
+
+**Fixes**
+- Add-outfit preview showed the zoomed crop instead of the composite → fixed.
+- Native date input alignment/width on mobile → fixed.
+- iOS `100vh` blank-scroll → switched all `min-h-screen` to `min-h-dvh` (+ banner
+  offset calc).
+- Deleting an outfit → returns to the list, and fixed a Radix `pointer-events:none`
+  leak that froze the home page after delete.
+- Outfit counter numbers chronologically (oldest = 1).
+- Composite now fills a **3:4 frame** (was a tall/narrow strip); outfit-detail photo
+  has a tap fit/fill toggle. Feature idea #1 in §10 (re-remove bg fills frame) = done.
+
+**Flow redesign** (the big one)
+- Merged the remove-bg step into crop; 3-step stepper Crop → Background → Tag.
+- Dropped the details step: **no notes**; date from EXIF, asked on the tag step only
+  when the photo has none. Outfit saves automatically after Background/Use-as-is,
+  then tagging is step 3 (skippable). See CLAUDE.md for deferred items (drag/zoom,
+  custom backgrounds, batch reprocess of old tall images).

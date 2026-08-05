@@ -48,12 +48,56 @@ Migrated off Replit → local dev + Railway (July 2026). Kept Postgres.
 optional `REPLICATE_API_KEY` (bg removal; client falls back to WASM if absent),
 `OPENAI_API_KEY` + `APP_BASE_URL` (clothing detection; needs a public URL).
 
-## Migration status — COMPLETE (Aug 2026)
-Live at **https://fitcheq-production.up.railway.app** (Railway project `fitcheq`).
-- Managed Postgres, **private networking only** — the public TCP proxy is
-  intentionally OFF. To do one-off external DB work: Postgres → Settings →
-  Networking → Add Public Access, use `DATABASE_PUBLIC_URL`, then remove it again.
+## Environments & deploy (Railway project `fitcheq`)
+Two environments, same service (`fitcheq`) + one Postgres + one volume each.
+- **production** — https://fitcheq-production.up.railway.app  (real data)
+- **staging** — https://fitcheq-staging.up.railway.app  (isolated DB seeded from
+  the prod dump; own volume/photos; login = same `APP_PASSWORD` as prod). Shows a
+  black **STAGING** banner (any non-prod host does; see `client/src/lib/env.ts` +
+  `components/EnvBanner.tsx`). Prod shows no banner.
+
+**Deploy workflow** (CLI is linked; run from repo root):
+- `railway up -e staging -s fitcheq` → test on phone at the staging URL
+- `railway up -e production -s fitcheq` → promote to prod
+- `--detach` returns immediately; watch with
+  `railway logs -e <env> -s fitcheq --deployment --latest` (look for "serving on port").
+
+**Staging DB**: reset/seed anytime with
+`railway ssh -e staging -s fitcheq -- node scripts/seed-staging.cjs`
+(schema from `export/database_dump.sql` DDL + data from `…_production.sql`;
+prod-guarded). Postgres is private-only in both envs — `railway ssh` into the app
+container is how we run one-off DB scripts (a plain `psql` from a laptop needs the
+temporary public proxy, see below).
+- Managed Postgres, **private networking only** — public TCP proxy OFF. For laptop
+  DB work: Postgres → Settings → Networking → Add Public Access, use
+  `DATABASE_PUBLIC_URL`, then remove it again.
 - Volume `fitcheq-volume` at `/data`; `UPLOAD_DIR=/data/uploads`, seeded from
   `export/photos` on boot.
-- Redeploy from here: `railway up -s fitcheq` (CLI is linked to the project).
-- Work is on branch `migrate-off-replit` (local commits; not pushed to GitHub).
+
+**Local preview** (Browser pane): `code/.claude/launch.json` runs fitcheq's
+`npm run dev` pinned to **port 5050** (5000 is taken by macOS ControlCenter). The
+in-app browser can't hold the login session; test auth-gated flows on staging.
+
+## Git
+Branch **`migrate-off-replit`** (pushed to `origin`, tracking). `main` still only
+has the original Replit push. Consider merging + GitHub auto-deploy later.
+
+## Add-outfit flow (redesigned Aug 2026) — `pages/add-outfit.tsx` + `reconcile.tsx`
+3 steps with a progress indicator: **Crop → Background → Tag items**.
+- Crop screen offers **Remove background** (crop + auto bg-removal → colour picker)
+  or **Use photo as-is** (crop → save). No standalone remove-bg gate.
+- Colour picker: translucent scrollable swatch bar over the image bottom; `+ Your
+  own` tile is a coming-soon placeholder (toast only).
+- Compositing outputs a fixed **portrait 3:4 frame**, background filling it, subject
+  centre-fit (`compositeOnBackground` in `lib/imageUtils.ts`). Old outfits saved
+  before this look tall/narrow — re-run ⋮ → Remove Background to reframe them.
+- After Background/Use-as-is the outfit is **saved automatically** (date from photo
+  EXIF, else asked on the tag step; **no notes field**), then lands on **Tag items
+  as step 3** (reconcile page shows the 3/3 stepper + "Skip for now" via
+  `?new=1[&askdate=1]`).
+
+### Deferred / parked (not built yet)
+- Moonpig-style **drag + pinch-zoom** to reposition/scale the cutout in the frame.
+- **Upload your own background** image/colour (the `+ Your own` tile).
+- Colour bar not yet mirrored into outfit-detail's Replace/Remove-bg picker.
+- Optional **batch reprocess** of old tall images (needs a browser for the WASM model).
