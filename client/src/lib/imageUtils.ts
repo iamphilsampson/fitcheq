@@ -83,16 +83,70 @@ export function drawBackground(
   }
 }
 
+/**
+ * Find the opaque bounding box of a (transparent-PNG) cutout, so we can frame
+ * the *subject* rather than the whole photo rectangle. Scans at a reduced
+ * resolution (fast, and framing doesn't need pixel precision) then maps the
+ * bounds back to natural coordinates. Falls back to the full image if pixels
+ * can't be read (e.g. a tainted canvas) or nothing is opaque.
+ */
+export function getOpaqueBounds(
+  img: HTMLImageElement,
+  { alphaThreshold = 10, maxScan = 512 }: { alphaThreshold?: number; maxScan?: number } = {}
+): { sx: number; sy: number; sw: number; sh: number } {
+  const nw = img.naturalWidth, nh = img.naturalHeight;
+  const full = { sx: 0, sy: 0, sw: nw, sh: nh };
+  if (!nw || !nh) return full;
+  const longest = Math.max(nw, nh);
+  const s = longest > maxScan ? maxScan / longest : 1;
+  const w = Math.max(1, Math.round(nw * s));
+  const h = Math.max(1, Math.round(nh * s));
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return full;
+  ctx.drawImage(img, 0, 0, w, h);
+  let data: Uint8ClampedArray;
+  try { data = ctx.getImageData(0, 0, w, h).data; } catch { return full; }
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (data[(y * w + x) * 4 + 3] > alphaThreshold) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < minX || maxY < minY) return full; // fully transparent
+  const inv = 1 / s;
+  const sx = Math.max(0, Math.floor(minX * inv));
+  const sy = Math.max(0, Math.floor(minY * inv));
+  const sw = Math.min(nw - sx, Math.ceil((maxX - minX + 1) * inv));
+  const sh = Math.min(nh - sy, Math.ceil((maxY - minY + 1) * inv));
+  return { sx, sy, sw, sh };
+}
+
+/**
+ * Draw a cutout centred and fitted into a w×h frame. Frames the *subject*
+ * (opaque bounding box) rather than the whole photo rectangle, so the person
+ * is centred and fills the frame instead of floating wherever they happened to
+ * stand in the source photo. `margin` leaves a little breathing room at the
+ * edges (0.96 = 4% inset).
+ */
 export function drawCutoutCentered(
   ctx: CanvasRenderingContext2D,
   img: HTMLImageElement,
   w: number,
-  h: number
+  h: number,
+  margin = 0.96
 ) {
-  const scale = Math.min(w / img.naturalWidth, h / img.naturalHeight);
-  const dw = img.naturalWidth * scale;
-  const dh = img.naturalHeight * scale;
-  ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  const b = getOpaqueBounds(img);
+  const scale = Math.min(w / b.sw, h / b.sh) * margin;
+  const dw = b.sw * scale;
+  const dh = b.sh * scale;
+  ctx.drawImage(img, b.sx, b.sy, b.sw, b.sh, (w - dw) / 2, (h - dh) / 2, dw, dh);
 }
 
 export type BgRemovalProgress = {

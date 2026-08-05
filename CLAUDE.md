@@ -103,9 +103,11 @@ deploy straight to prod). Wire it from the Railway dashboard if/when wanted.
   no original was stored — avoids compounding composite loss.
 - Colour picker: translucent scrollable swatch bar over the image bottom; `+ Your
   own` tile is a coming-soon placeholder (toast only).
-- Compositing outputs a fixed **portrait 3:4 frame**, background filling it, subject
-  centre-fit (`compositeOnBackground` in `lib/imageUtils.ts`). Old outfits saved
-  before this look tall/narrow — re-run ⋮ → Remove Background to reframe them.
+- Compositing outputs a fixed **portrait 3:4 frame**, background filling it. The
+  subject is framed by its **opaque bounding box** (`getOpaqueBounds`) then centre-fit
+  with a 4% margin — so the person is centred and fills the frame, not floating wherever
+  they stood (`drawCutoutCentered` / `compositeOnBackground` in `lib/imageUtils.ts`). Old
+  outfits saved before this look tall/narrow/off-centre — re-run ⋮ → Remove Background.
 - After Background/Use-as-is the outfit is **saved automatically** (date from photo
   EXIF, else asked on the tag step; **no notes field**), then lands on **Tag items
   as step 3** (reconcile page shows the 3/3 stepper + "Skip for now" via
@@ -114,8 +116,19 @@ deploy straight to prod). Wire it from the Railway dashboard if/when wanted.
 ### Deferred / parked (not built yet)
 - Moonpig-style **drag + pinch-zoom** to reposition/scale the cutout in the frame.
 - **Upload your own background** image/colour (the `+ Your own` tile).
-- Colour bar not yet mirrored into outfit-detail's Replace/Remove-bg picker.
+- Colour bar not yet mirrored into outfit-detail's Replace/Remove-bg picker (still the
+  old 300×400 preview + opacity swatches; add flow has the translucent bar).
 - Optional **batch reprocess** of old tall images (needs a browser for the WASM model).
+
+### Roadmap: AI item suggestions (scoped, not built)
+Auto-suggest an outfit's items instead of hand-tagging. **~80% already exists**:
+`POST /api/outfits/analyze` (server/routes.ts) sends the photo to **GPT-4o Vision**,
+returns structured items (`detectedItemSchema`), and `reconcile.tsx` already pre-fills
+the tag step from a `?items=` param. Not wired into the current add flow, and needs
+`OPENAI_API_KEY` + `APP_BASE_URL` (the model fetches the image over a public URL).
+To ship: set a key, add a "Detect items" call (auto after save or a button on the tag
+step) → navigate to reconcile with `?items=`. Option to swap GPT-4o → Claude vision to
+match the stack (return the same shape). Small-to-medium.
 
 ### Backfilling originals for old outfits (Aug 2026)
 9 of 11 prod outfits (IDs 1-5,7-10) have `original_image_url = NULL`; only 12 & 14 have
