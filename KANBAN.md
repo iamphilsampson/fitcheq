@@ -48,19 +48,15 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   connector/computer-use needed) — this is about seeing failures without a human in the loop.
 
 ## 🟡 In Progress
-- **[BUG] Kill the "Railway crashed" deploy notification — FIXED, verified on staging, ready
-  to promote → prod.** `fix/clean-deploys`. Two root causes: (1) app started via `npm start`,
-  so npm was PID-1 and reported SIGTERM as a non-zero error (the "crash") — fixed by setting
-  Railway `startCommand: node dist/index.cjs` so node gets the signal directly; (2) no graceful
-  shutdown + no healthcheck — added SIGTERM/SIGINT → `httpServer.close()` → exit 0 (10s
-  force-exit fallback), public `GET /api/health` → 200, and `railway.json`
-  `healthcheckPath=/api/health`. Verified on staging (deploy #3 logs): `GET /api/health 200` →
-  `received SIGTERM, shutting down` → `connections drained, exiting`, no npm error.
-  **Caveat:** the FIRST prod deploy (this promotion) still crashes the *current* prod container
-  (started the old way via npm) → one last crash notification; every deploy after is clean.
-  On go-ahead → `railway up -e production` + merge to `main`.
+- _(nothing — pull the next item from To Do; branch off `main` first)_
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
+- 2026-08-06 · **prod** — Clean deploys / kill false "crashed" notification: Railway
+  `startCommand: node dist/index.cjs` (node gets SIGTERM directly instead of npm reporting it
+  as a crash) + graceful SIGTERM/SIGINT shutdown + `GET /api/health` + `railway.json`
+  `healthcheckPath`. Verified on staging (clean SIGTERM → drained → exit 0, no npm error).
+  Merged `fix/clean-deploys` → `main`. Note: this promotion crashed the pre-fix prod container
+  one last time; deploys from here are clean + zero-downtime.
 - 2026-08-06 · **prod** — Fix item-delete wardrobe freeze: global `PointerEventsGuard` (clears
   stray Radix `pointer-events:none` on every route change) + item-detail unmount cleanup.
   Verified on staging (delete → interactive wardrobe); merged `fix/item-delete-freeze` → `main`.
