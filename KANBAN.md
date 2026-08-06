@@ -48,12 +48,17 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   connector/computer-use needed) — this is about seeing failures without a human in the loop.
 
 ## 🟡 In Progress
-- **[ROADMAP→doing] Kill the "Railway crashed" deploy notification** — `fix/clean-deploys`.
-  Added: graceful SIGTERM/SIGINT shutdown in server/index.ts (`httpServer.close()` → exit 0,
-  10s force-exit fallback), public `GET /api/health` → 200, and `railway.json` with
-  `healthcheckPath=/api/health`. Health endpoint verified 200 locally. NOTE: the crash flag is
-  on the *old* container being replaced, which only gains the handler once this ships — so the
-  clean-shutdown proof appears on the *next* deploy after this one. Verifying on staging.
+- **[BUG] Kill the "Railway crashed" deploy notification — FIXED, verified on staging, ready
+  to promote → prod.** `fix/clean-deploys`. Two root causes: (1) app started via `npm start`,
+  so npm was PID-1 and reported SIGTERM as a non-zero error (the "crash") — fixed by setting
+  Railway `startCommand: node dist/index.cjs` so node gets the signal directly; (2) no graceful
+  shutdown + no healthcheck — added SIGTERM/SIGINT → `httpServer.close()` → exit 0 (10s
+  force-exit fallback), public `GET /api/health` → 200, and `railway.json`
+  `healthcheckPath=/api/health`. Verified on staging (deploy #3 logs): `GET /api/health 200` →
+  `received SIGTERM, shutting down` → `connections drained, exiting`, no npm error.
+  **Caveat:** the FIRST prod deploy (this promotion) still crashes the *current* prod container
+  (started the old way via npm) → one last crash notification; every deploy after is clean.
+  On go-ahead → `railway up -e production` + merge to `main`.
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
 - 2026-08-06 · **prod** — Fix item-delete wardrobe freeze: global `PointerEventsGuard` (clears
