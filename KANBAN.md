@@ -42,3 +42,4 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - 2026-08-06 · staging + prod — Replicate `REPLICATE_API_KEY` wired (shared var referenced).
 - 2026-08-06 · staging — Fix sideways cut-out (`normalizeOrientation` bakes EXIF) — confirmed good by Phil.
 - 2026-08-06 · repo — Working practice + KANBAN board + Done-as-changelog rule.
+- 2026-08-06 · staging — Pre-prod review fixes (bg-removal cancel guard, pinch-abort `edited` flag, undo cap 8→5).
