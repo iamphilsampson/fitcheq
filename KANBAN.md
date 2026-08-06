@@ -31,6 +31,11 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   unused deps/exports, stale scaffolding (e.g. the dormant `server/replit_integrations`
   once its future use is decided), orphaned assets, and out-of-date docs/comments. Produce a
   findings list first (grouped by risk), then clean up in small, verifiable passes.
+- **[ROADMAP] Reclaim ~52MB of git history from deleted `attached_assets/`** — the 24
+  orphaned images were removed from the working tree (cleanup pass 4) but still live in git
+  history, so the repo/clone stays ~52MB heavier. Reclaiming needs a **history rewrite**
+  (`git filter-repo` / BFG) + force-push, which rewrites commit SHAs — coordinate before doing
+  it. Low urgency, do deliberately. (Same applies to `export/photos` if repo size ever matters.)
 - **[ROADMAP] Testing & observability so Claude can verify/​debug autonomously** — (a) an
   **e2e test suite** (Playwright against staging using the `AUTH_DISABLED` bypass + the
   `data-testid`s already in the UI) so flows like add-outfit / delete / tagging are checked
