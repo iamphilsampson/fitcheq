@@ -22,6 +22,11 @@ import "./replit_integrations/auth/types"; // reuse Express.User type augmentati
 // fresh deployment can point at a different id without a code change.
 const OWNER_ID = process.env.OWNER_USER_ID || "103113185755418009684";
 
+// Escape hatch for non-prod: when AUTH_DISABLED=true, every request is treated
+// as the owner (no login gate). Intended ONLY for staging so it can be tested
+// without a session — NEVER set this on production. Reversible: unset the var.
+const AUTH_DISABLED = process.env.AUTH_DISABLED === "true";
+
 declare module "express-session" {
   interface SessionData {
     authed?: boolean;
@@ -63,6 +68,12 @@ export async function setupAuth(app: Express) {
   app.set("trust proxy", 1);
   app.use(getSession());
 
+  if (AUTH_DISABLED) {
+    console.warn(
+      "[auth] AUTH_DISABLED=true — login gate is OFF; all requests run as the owner. Do NOT use this on production.",
+    );
+  }
+
   app.post("/api/login", (req, res) => {
     const expected = process.env.APP_PASSWORD;
     if (!expected) {
@@ -92,7 +103,7 @@ export async function setupAuth(app: Express) {
 }
 
 export const isAuthenticated: RequestHandler = (req, res, next) => {
-  if (req.session?.authed) {
+  if (AUTH_DISABLED || req.session?.authed) {
     // Populate the same shape the routes expect (req.user.claims.sub).
     req.user = { claims: { sub: OWNER_ID }, expires_at: undefined };
     return next();
