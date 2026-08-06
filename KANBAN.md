@@ -24,9 +24,11 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - **Upload-your-own-background** (the "Your own" tile) (parked).
 
 ## 🟡 In Progress
-- **Fix sideways cut-out** — backfilled retrofit originals are stored landscape (EXIF
-  rotation not baked by `sips`), so re-clean feeds a sideways image to the model.
-  Regenerate the 7 originals upright + re-apply to staging, then re-evaluate quality.
+- **Fix sideways cut-out** — ✅ fixed in code (`normalizeOrientation` bakes EXIF rotation
+  before bg-removal; verified 2000×1500 flagged → 1500×2000 upright). **Deployed to
+  staging (09:35).** ⏳ Awaiting Phil's phone re-clean to confirm upright + whether the
+  mask quality recovers now the subject is upright. No file regeneration needed — the
+  code fix covers all 7 backfilled originals + future uploads.
 
 ## 🟢 Done
 - Merge `migrate-off-replit` → `main` (fast-forward, pushed).
