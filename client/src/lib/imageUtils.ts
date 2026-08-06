@@ -276,29 +276,76 @@ async function removeBgServerSide(
   }
 }
 
+/**
+ * Return a blob whose raw pixels are already upright (EXIF orientation baked
+ * in, flag cleared). Background-removal models — and server-side PIL — do NOT
+ * honour EXIF orientation, so a phone photo carrying an orientation flag would
+ * be segmented sideways (rotated + garbage mask). We normalise before removal.
+ * Prefers createImageBitmap({imageOrientation:'from-image'}); falls back to an
+ * <img> round-trip (browsers apply image-orientation:from-image by default).
+ */
+export async function normalizeOrientation(blob: Blob, quality = 0.95): Promise<Blob> {
+  const encode = (canvas: HTMLCanvasElement) =>
+    new Promise<Blob>((res, rej) =>
+      canvas.toBlob((b) => (b ? res(b) : rej(new Error("Canvas empty"))), "image/jpeg", quality)
+    );
+  try {
+    if (typeof createImageBitmap === "function") {
+      const bmp = await createImageBitmap(blob, { imageOrientation: "from-image" } as ImageBitmapOptions);
+      const c = document.createElement("canvas");
+      c.width = bmp.width;
+      c.height = bmp.height;
+      const ctx = c.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(bmp, 0, 0);
+        bmp.close?.();
+        return await encode(c);
+      }
+      bmp.close?.();
+    }
+  } catch { /* fall through to <img> */ }
+  return new Promise<Blob>((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      const ctx = c.getContext("2d");
+      URL.revokeObjectURL(url);
+      if (!ctx) { reject(new Error("no ctx")); return; }
+      ctx.drawImage(img, 0, 0);
+      c.toBlob((b) => (b ? resolve(b) : reject(new Error("Canvas empty"))), "image/jpeg", quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Image load failed")); };
+    img.src = url;
+  });
+}
+
 export async function removeBgFromBlob(
   blob: Blob,
   onProgress?: (p: BgRemovalProgress) => void
 ): Promise<Blob> {
+  // Upright pixels first — the model ignores EXIF orientation otherwise.
+  const src = await normalizeOrientation(blob).catch(() => blob);
   let result: Blob;
   let path: "server-birefnet" | "client-isnet";
   try {
-    result = await removeBgServerSide(blob, onProgress);
+    result = await removeBgServerSide(src, onProgress);
     path = "server-birefnet";
   } catch (err) {
     if (err instanceof BgRemovalTimeoutError) {
       throw err;
     }
-    console.warn("[bg-removal] Server-side BiRefNet failed, falling back to ISNet:", err);
-    result = await removeBgISNet(blob, onProgress);
+    console.warn("[bg-removal] Server-side model failed, falling back to ISNet:", err);
+    result = await removeBgISNet(src, onProgress);
     path = "client-isnet";
   }
-  // Diagnostic: which path ran and how the cutout compares to the source.
-  // A near-equal output size is a strong hint the segmenter didn't actually
-  // remove anything (and we'd produce a misleading composite if we ignored it).
-  const ratio = blob.size > 0 ? (result.size / blob.size).toFixed(2) : "?";
+  // Diagnostic: which path ran and how the cutout compares to the (normalised)
+  // source. A near-equal output size hints the segmenter removed nothing.
+  const ratio = src.size > 0 ? (result.size / src.size).toFixed(2) : "?";
   console.info(
-    `[bg-removal] path=${path} sourceBytes=${blob.size} cutoutBytes=${result.size} sizeRatio=${ratio}`
+    `[bg-removal] path=${path} sourceBytes=${src.size} cutoutBytes=${result.size} sizeRatio=${ratio}`
   );
   return result;
 }
