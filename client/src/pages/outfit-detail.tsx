@@ -1,7 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRoute, useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Tag, X, MoreVertical, Trash2, Camera, Image as ImageIcon, ChevronLeft, ChevronRight, Wand2, Upload, History, Plus } from "lucide-react";
+import { ArrowLeft, Loader2, Tag, X, MoreVertical, Trash2, Camera, Image as ImageIcon, ChevronLeft, ChevronRight, Wand2, Upload, History, Plus, Crop } from "lucide-react";
+import ReactCrop, { type Crop as CropType } from "react-image-crop";
+import "react-image-crop/dist/ReactCrop.css";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,7 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, measureCutoutTransparency, downscaleImageBlob, CutoutNotTransparentError, type BgRemovalProgress } from "@/lib/imageUtils";
+import { BACKGROUNDS, drawBackground, drawCutoutCentered, removeBgFromBlob, compositeOnBackground, measureCutoutTransparency, downscaleImageBlob, cropImageBlob, CutoutNotTransparentError, type BgRemovalProgress, type CropRect } from "@/lib/imageUtils";
 import { Progress } from "@/components/ui/progress";
 import CutoutEditor from "@/components/CutoutEditor";
 import type { Outfit, Item } from "@shared/schema";
@@ -40,6 +42,19 @@ interface OutfitSummary {
 }
 
 type UploadSource = "composite" | "raw";
+
+// ReactCrop reports the crop in displayed (CSS) pixels; convert to natural
+// image pixels for cropImageBlob. (Same helper as the add-outfit flow.)
+function cropToImagePixels(image: HTMLImageElement, c: CropType): CropRect {
+  const scaleX = image.naturalWidth / image.width;
+  const scaleY = image.naturalHeight / image.height;
+  return {
+    x: Math.round((c.x || 0) * scaleX),
+    y: Math.round((c.y || 0) * scaleY),
+    w: Math.round((c.width || 0) * scaleX),
+    h: Math.round((c.height || 0) * scaleY),
+  };
+}
 
 export default function OutfitDetail() {
   const [, params] = useRoute("/outfits/:id");
@@ -60,6 +75,12 @@ export default function OutfitDetail() {
   const [isRemovingBg, setIsRemovingBg] = useState(false);
   const [bgProgress, setBgProgress] = useState<BgRemovalProgress | null>(null);
   const [cutoutBlob, setCutoutBlob] = useState<Blob | null>(null);
+  // Crop step before bg-removal (re-clean / replace) — lets the user trim side
+  // clutter, matching the add flow, so re-cleaned cut-outs aren't noisier.
+  const [isCropStep, setIsCropStep] = useState(false);
+  const [crop, setCrop] = useState<CropType>();
+  const [croppedBlob, setCroppedBlob] = useState<Blob | null>(null);
+  const cropImgRef = useRef<HTMLImageElement>(null);
   // Optional manual cleanup (erase/lasso) of the cutout, between bg-removal and
   // the background picker — mirrors the add-outfit flow.
   const [isCleanupStep, setIsCleanupStep] = useState(false);
@@ -159,6 +180,9 @@ export default function OutfitDetail() {
       if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
       return null;
     });
+    setIsCropStep(false);
+    setCrop(undefined);
+    setCroppedBlob(null);
     setIsRemoveBgStep(false);
     setIsRemovingBg(false);
     setBgProgress(null);
@@ -264,7 +288,7 @@ export default function OutfitDetail() {
     }
   }, [outfitId, resetPhotoEditState, toast]);
 
-  // File picked via Replace Photo → enter bg removal pipeline
+  // File picked via Replace Photo → crop step, then removal.
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !file.type.startsWith("image/")) return;
@@ -274,52 +298,88 @@ export default function OutfitDetail() {
       return URL.createObjectURL(file);
     });
     setCutoutBlob(null);
-    setIsRemoveBgStep(true);
+    setCroppedBlob(null);
+    setCrop(undefined);
     setIsBgPickerMode(false);
+    setIsRemoveBgStep(false);
+    setIsCropStep(true);
   };
 
-  // Run ML model; short-circuits if cutout already computed
-  const handleRemoveBg = async () => {
-    if (cutoutBlob) {
-      setIsRemoveBgStep(false);
-      setIsCleanupStep(true);
-      setSelectedBg(0);
-      return;
+  // Default crop when the crop image loads (trims side clutter; user adjusts).
+  const onCropImageLoad = () => {
+    setCrop({ unit: "%", x: 15, y: 2.5, width: 70, height: 95 });
+  };
+
+  // Resolve the blob to crop: the picked file (Replace) or the current source
+  // URL (re-clean), fetched on demand.
+  const getCropSourceBlob = async (): Promise<Blob | null> => {
+    if (selectedFileBlob) return selectedFileBlob;
+    if (selectedFilePreview) {
+      try {
+        const res = await fetch(selectedFilePreview);
+        if (res.ok) return await res.blob();
+      } catch { /* fall through */ }
     }
-    const source = selectedFileBlob;
-    if (!source) return;
+    return null;
+  };
+
+  const cropCurrentImage = async (): Promise<Blob | null> => {
+    if (!cropImgRef.current || !crop?.width || !crop?.height) return null;
+    const src = await getCropSourceBlob();
+    if (!src) { toast({ title: "Couldn't load the photo", variant: "destructive" }); return null; }
+    try {
+      const rect = cropToImagePixels(cropImgRef.current, crop);
+      return await cropImageBlob(src, rect, 2400, 0.92);
+    } catch {
+      toast({ title: "Crop failed", variant: "destructive" });
+      return null;
+    }
+  };
+
+  // Run bg-removal on an already-cropped blob → cleanup step.
+  const runRemoval = async (sourceBlob: Blob) => {
     bgRemovalActiveRef.current = true;
+    setIsCropStep(false);
+    setIsRemoveBgStep(true);
     setIsRemovingBg(true);
     setBgProgress(null);
     try {
-      const cutout = await removeBgFromBlob(source, (p) => {
-        if (bgRemovalActiveRef.current) setBgProgress(p);
-      });
-      if (!bgRemovalActiveRef.current) return; // user exited the flow
+      const cutout = await removeBgFromBlob(sourceBlob, (p) => { if (bgRemovalActiveRef.current) setBgProgress(p); });
+      if (!bgRemovalActiveRef.current) return;
       const transparentRatio = await measureCutoutTransparency(cutout);
+      if (!bgRemovalActiveRef.current) return;
       console.info(`[bg-removal] transparentRatio=${transparentRatio.toFixed(3)}`);
-      if (transparentRatio < 0.05) {
-        throw new CutoutNotTransparentError(transparentRatio);
-      }
+      if (transparentRatio < 0.05) throw new CutoutNotTransparentError(transparentRatio);
       setCutoutBlob(cutout);
       setIsRemoveBgStep(false);
       setIsCleanupStep(true);
       setSelectedBg(0);
     } catch (err) {
-      if (!bgRemovalActiveRef.current) return; // stale error, flow already reset
+      if (!bgRemovalActiveRef.current) return;
       if (err instanceof CutoutNotTransparentError) {
-        toast({
-          title: "Couldn't isolate the subject",
-          description: "Background removal didn't find a clear person — try a different photo or skip to upload as-is.",
-          variant: "destructive",
-        });
+        toast({ title: "Couldn't isolate the subject", description: "Try adjusting the crop, a different photo, or cancel.", variant: "destructive" });
       } else {
-        toast({ title: "Background removal failed", description: "Try again or skip to upload as-is", variant: "destructive" });
+        toast({ title: "Background removal failed", description: "Try again.", variant: "destructive" });
       }
+      setIsRemoveBgStep(false);
+      setIsCropStep(true); // back to crop to adjust/retry
     } finally {
       setIsRemovingBg(false);
       setBgProgress(null);
     }
+  };
+
+  const handleCropThenRemove = async () => {
+    const cropped = await cropCurrentImage();
+    if (!cropped) return;
+    setCroppedBlob(cropped);
+    await runRemoval(cropped);
+  };
+
+  // Replace flow only: skip removal, upload the cropped photo as-is.
+  const handleCropThenSkip = async () => {
+    const cropped = await cropCurrentImage();
+    if (cropped) await uploadBlobAndPatch(cropped, "raw");
   };
 
   // Leaving the optional cleanup step → continue to the background picker.
@@ -340,15 +400,6 @@ export default function OutfitDetail() {
     toast({ title: "Coming soon", description: "You'll be able to upload your own background here." });
   };
 
-  // Skip bg removal → upload the selected file as-is
-  const handleSkipBgRemoval = () => {
-    if (isCurrentPhotoBgFlow) {
-      resetPhotoEditState();
-    } else if (selectedFileBlob) {
-      uploadBlobAndPatch(selectedFileBlob, "raw");
-    }
-  };
-
   // Composite cutout onto chosen background and upload immediately
   const handleComposite = async () => {
     if (!cutoutBlob) return;
@@ -360,12 +411,18 @@ export default function OutfitDetail() {
       // copy as the new original (smaller than a raw phone shot, still a clean
       // re-clean source). If we're re-removing bg from the current outfit photo,
       // leave originalImageUrl untouched.
+      // Replace flow: store the CROPPED photo (downscaled) as the new original —
+      // smaller and already trimmed. Re-clean of the current photo leaves the
+      // stored original untouched (so it stays pristine for future re-crops).
       let originalForUpload: Blob | null = null;
-      if (!isCurrentPhotoBgFlow && selectedFileBlob) {
-        try {
-          originalForUpload = await downscaleImageBlob(selectedFileBlob, 2000, 0.9);
-        } catch {
-          originalForUpload = selectedFileBlob;
+      if (!isCurrentPhotoBgFlow) {
+        const base = croppedBlob ?? selectedFileBlob;
+        if (base) {
+          try {
+            originalForUpload = await downscaleImageBlob(base, 2000, 0.9);
+          } catch {
+            originalForUpload = base;
+          }
         }
       }
       await uploadBlobAndPatch(blob, "composite", originalForUpload);
@@ -384,56 +441,24 @@ export default function OutfitDetail() {
     }
   };
 
-  // Remove Background from the current outfit photo (no new image needed)
-  const handleRemoveCurrentBg = async () => {
+  // Re-clean the current outfit photo → crop step, then removal. Sources from the
+  // stored original (pristine, no baked-in background) when present, else the
+  // current photo. The crop <img> loads the source URL directly; the blob is
+  // fetched on demand at crop-confirm (getCropSourceBlob).
+  const handleRemoveCurrentBg = () => {
     if (!outfit) return;
-    bgRemovalActiveRef.current = true;
+    const source = outfit.originalImageUrl ?? outfit.fullImageUrl;
     setShowPhotoOptions(true);
     setIsCurrentPhotoBgFlow(true);
-    // Prefer the stored original (pristine, no baked-in background) over the
-    // current composite — re-running removal on a composite compounds quality
-    // loss. Falls back to the current photo when no original was stored.
-    const source = outfit.originalImageUrl ?? outfit.fullImageUrl;
+    setSelectedFileBlob(null);
     setSelectedFilePreview(source);
-    setIsRemoveBgStep(true);
-    setIsRemovingBg(true);
-    setBgProgress(null);
-    try {
-      const res = await fetch(source);
-      if (!bgRemovalActiveRef.current) return; // user exited the flow
-      if (!res.ok) throw new Error("Failed to fetch source photo");
-      const blob = await res.blob();
-      if (!bgRemovalActiveRef.current) return; // user exited the flow
-      console.info(`[bg-removal] re-clean source=${outfit.originalImageUrl ? "original" : "current"} bytes=${blob.size}`);
-      const cutout = await removeBgFromBlob(blob, (p) => {
-        if (bgRemovalActiveRef.current) setBgProgress(p);
-      });
-      if (!bgRemovalActiveRef.current) return; // user exited the flow
-      const transparentRatio = await measureCutoutTransparency(cutout);
-      console.info(`[bg-removal] transparentRatio=${transparentRatio.toFixed(3)}`);
-      if (transparentRatio < 0.05) {
-        throw new CutoutNotTransparentError(transparentRatio);
-      }
-      setCutoutBlob(cutout);
-      setIsRemoveBgStep(false);
-      setIsCleanupStep(true);
-      setSelectedBg(0);
-    } catch (err) {
-      if (!bgRemovalActiveRef.current) return; // stale error, flow already reset
-      if (err instanceof CutoutNotTransparentError) {
-        toast({
-          title: "Couldn't isolate the subject",
-          description: "Background removal didn't find a clear person in this photo. Try replacing the photo instead.",
-          variant: "destructive",
-        });
-      } else {
-        toast({ title: "Background removal failed", description: "Try again", variant: "destructive" });
-      }
-      resetPhotoEditState();
-    } finally {
-      setIsRemovingBg(false);
-      setBgProgress(null);
-    }
+    setCutoutBlob(null);
+    setCroppedBlob(null);
+    setCrop(undefined);
+    setIsBgPickerMode(false);
+    setIsRemoveBgStep(false);
+    setIsCleanupStep(false);
+    setIsCropStep(true);
   };
 
   // Back button / cancel logic
@@ -443,26 +468,29 @@ export default function OutfitDetail() {
       setIsBgPickerMode(false);
       setIsCleanupStep(true);
     } else if (isCleanupStep) {
-      // From cleanup → back to the removal choice (Replace flow, cutout cached to
-      // skip re-inference) or exit entirely (current-photo flow has no choice UI).
+      // From cleanup → back to the crop step (re-crop / re-run).
       setIsCleanupStep(false);
-      if (isCurrentPhotoBgFlow) {
-        resetPhotoEditState();
-      } else {
-        setIsRemoveBgStep(true);
-      }
-    } else if (isRemoveBgStep && !isCurrentPhotoBgFlow) {
-      // From bg removal choice (Replace Photo flow) → back to source picker.
-      // Cancel any in-flight ML model run so its result is discarded.
+      setIsCropStep(true);
+    } else if (isRemoveBgStep) {
+      // Removal in flight → cancel it and return to crop.
       bgRemovalActiveRef.current = false;
       setIsRemoveBgStep(false);
       setIsRemovingBg(false);
-      setSelectedFileBlob(null);
-      setSelectedFilePreview((prev) => {
-        if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
-        return null;
-      });
-      setCutoutBlob(null);
+      setIsCropStep(true);
+    } else if (isCropStep) {
+      if (isCurrentPhotoBgFlow) {
+        resetPhotoEditState();
+      } else {
+        // Replace flow → back to the source picker.
+        setIsCropStep(false);
+        setSelectedFileBlob(null);
+        setSelectedFilePreview((prev) => {
+          if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+          return null;
+        });
+        setCutoutBlob(null);
+        setCroppedBlob(null);
+      }
     } else {
       resetPhotoEditState();
     }
@@ -533,7 +561,8 @@ export default function OutfitDetail() {
   let headerTitle = formattedDate;
   if (isBgPickerMode) headerTitle = "Pick a background";
   else if (isCleanupStep) headerTitle = "Clean up";
-  else if (isRemoveBgStep || showPhotoOptions) headerTitle = isCurrentPhotoBgFlow ? "Remove Background" : "Replace Photo";
+  else if (isCropStep || isRemoveBgStep) headerTitle = "Crop";
+  else if (showPhotoOptions) headerTitle = isCurrentPhotoBgFlow ? "Remove Background" : "Replace Photo";
 
   return (
     <div className="min-h-dvh bg-background">
@@ -588,6 +617,14 @@ export default function OutfitDetail() {
                   >
                     <Wand2 className="h-4 w-4" /> Remove Background
                   </DropdownMenuItem>
+                  {outfit.originalImageUrl && (
+                    <DropdownMenuItem
+                      onClick={() => setViewingOriginal((v) => !v)}
+                      data-testid="menu-view-original"
+                    >
+                      <History className="h-4 w-4" /> {viewingOriginal ? "View edited photo" : "View original photo"}
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem
                     onClick={() => setShowDeleteDialog(true)}
                     className="text-destructive focus:text-destructive"
@@ -682,60 +719,43 @@ export default function OutfitDetail() {
               </Button>
             </div>
 
+          ) : isCropStep ? (
+            // Crop step — trim clutter before removal (matches the add flow).
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Crop className="h-4 w-4" /> Crop your photo
+              </div>
+              <ReactCrop crop={crop} onChange={(c) => setCrop(c)} minWidth={40} minHeight={40} className="max-h-[55vh] mx-auto">
+                <img ref={cropImgRef} src={selectedFilePreview || ""} alt="Crop preview" onLoad={onCropImageLoad} className="max-h-[55vh] mx-auto" />
+              </ReactCrop>
+              <Button className="w-full gap-2" size="lg" onClick={handleCropThenRemove} data-testid="button-crop-removebg">
+                <Wand2 className="h-5 w-5" /> Remove background
+              </Button>
+              {!isCurrentPhotoBgFlow && (
+                <Button variant="ghost" className="w-full" size="lg" onClick={handleCropThenSkip} disabled={isReuploading} data-testid="button-crop-asis">
+                  {isReuploading ? <><Loader2 className="h-5 w-5 animate-spin" /> Uploading...</> : "Use photo as-is"}
+                </Button>
+              )}
+            </div>
+
           ) : isRemoveBgStep ? (
-            // Remove background choice
-            <div className="space-y-4">
+            // Removing… progress (auto-runs after crop).
+            <div className="space-y-3">
               <Card className="overflow-hidden">
-                <div className="bg-muted">
-                  <img
-                    src={selectedFilePreview || ""}
-                    alt="Your photo"
-                    className="w-full h-auto max-h-[60vh] object-contain block"
-                  />
+                <div className="relative flex items-center justify-center bg-muted">
+                  <img src={selectedFilePreview || ""} alt="Your photo" className="max-h-[50vh] max-w-full object-contain opacity-30" />
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 px-6 text-center">
+                    <Loader2 className="h-9 w-9 animate-spin text-primary" />
+                    <p className="text-sm font-semibold text-foreground">
+                      {!bgProgress ? "Starting up…" : bgProgress.phase === "download" ? "Downloading the AI model…" : "Removing the background…"}
+                    </p>
+                    {bgProgress && bgProgress.phase !== "server" && (
+                      <p className="text-xs font-semibold text-primary tabular-nums">{bgProgress.percent}%</p>
+                    )}
+                  </div>
                 </div>
               </Card>
-
-              <div className="space-y-2">
-                <Button
-                  className="w-full gap-2"
-                  size="lg"
-                  onClick={handleRemoveBg}
-                  disabled={isRemovingBg}
-                  data-testid="button-remove-bg"
-                >
-                  {isRemovingBg
-                    ? <><Loader2 className="h-5 w-5 animate-spin" /> {bgProgress ? (bgProgress.phase === "download" ? `Downloading model... ${bgProgress.percent}%` : `Processing... ${bgProgress.percent}%`) : "Removing background..."}</>
-                    : <><Wand2 className="h-5 w-5" /> Remove Background</>}
-                </Button>
-                {isRemovingBg && (
-                  <>
-                    <Progress
-                      value={bgProgress?.percent ?? 0}
-                      className="h-1.5"
-                      data-testid="progress-remove-bg"
-                    />
-                    <p className="text-xs text-center text-muted-foreground">
-                      {bgProgress?.phase === "download"
-                        ? "Downloading the background-removal model (one-time)"
-                        : bgProgress?.phase === "process"
-                        ? "Processing your photo"
-                        : "First time may take a moment while the model loads"}
-                    </p>
-                  </>
-                )}
-                {!isCurrentPhotoBgFlow && (
-                  <Button
-                    variant="ghost"
-                    className="w-full"
-                    size="lg"
-                    onClick={handleSkipBgRemoval}
-                    disabled={isRemovingBg || isReuploading}
-                    data-testid="button-skip-bg-removal"
-                  >
-                    {isReuploading ? <><Loader2 className="h-5 w-5 animate-spin" /> Uploading...</> : "Skip — upload as-is"}
-                  </Button>
-                )}
-              </div>
+              <Progress value={bgProgress?.percent ?? 0} className="h-1.5" data-testid="progress-remove-bg" />
             </div>
 
           ) : (
@@ -815,37 +835,15 @@ export default function OutfitDetail() {
                 </button>
               )}
 
-              {/* Subtle "View original" toggle — only shown when an original
-                  was stored (composite outfits). Sits in the top-right of the
-                  photo with z-10 and is rendered AFTER the nav buttons so it
-                  always wins the tap, with a muted "Original" pill on the
-                  top-left while showing the original. */}
-              {!isReuploading && outfit.originalImageUrl && (
-                <>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      // Stop the swipe handler on the parent from interpreting
-                      // this as a directional gesture.
-                      e.stopPropagation();
-                      setViewingOriginal((v) => !v);
-                    }}
-                    className="absolute top-2 right-2 z-10 rounded-full bg-black/40 hover:bg-black/55 backdrop-blur-sm p-1.5 text-white transition-colors"
-                    aria-label={viewingOriginal ? "Show edited photo" : "Show original photo"}
-                    aria-pressed={viewingOriginal}
-                    data-testid="button-toggle-original"
-                  >
-                    <History className="h-4 w-4" />
-                  </button>
-                  {viewingOriginal && (
-                    <span
-                      className="absolute top-2 left-2 z-10 pointer-events-none rounded-full bg-black/40 backdrop-blur-sm px-2 py-0.5 text-[11px] font-medium tracking-wide text-white uppercase"
-                      data-testid="badge-original"
-                    >
-                      Original
-                    </span>
-                  )}
-                </>
+              {/* "Original" indicator pill while viewing the original — the
+                  toggle itself now lives in the ⋮ menu (View original photo). */}
+              {!isReuploading && outfit.originalImageUrl && viewingOriginal && (
+                <span
+                  className="absolute top-2 left-2 z-10 pointer-events-none rounded-full bg-black/40 backdrop-blur-sm px-2 py-0.5 text-[11px] font-medium tracking-wide text-white uppercase"
+                  data-testid="badge-original"
+                >
+                  Original
+                </span>
               )}
             </div>
 
