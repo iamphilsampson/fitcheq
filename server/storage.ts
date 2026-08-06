@@ -17,6 +17,7 @@ import { eq, desc, sql, isNull, and, inArray } from "drizzle-orm";
 export interface IStorage {
   // Items
   getAllItems(userId: string): Promise<Item[]>;
+  getAllItemsWithWearCount(userId: string): Promise<(Item & { wearCount: number })[]>;
   getItem(id: number, userId: string): Promise<Item | undefined>;
   getItemWithOutfits(id: number, userId: string): Promise<(Item & { outfits: Outfit[] }) | undefined>;
   createItem(item: InsertItem): Promise<Item>;
@@ -50,6 +51,28 @@ export class DatabaseStorage implements IStorage {
   // Items
   async getAllItems(userId: string): Promise<Item[]> {
     return db.select().from(items).where(eq(items.userId, userId)).orderBy(desc(items.createdAt));
+  }
+
+  async getAllItemsWithWearCount(userId: string): Promise<(Item & { wearCount: number })[]> {
+    return db
+      .select({
+        id: items.id,
+        userId: items.userId,
+        category: items.category,
+        subCategory: items.subCategory,
+        brand: items.brand,
+        size: items.size,
+        color: items.color,
+        imageUrl: items.imageUrl,
+        description: items.description,
+        createdAt: items.createdAt,
+        wearCount: sql<number>`cast(count(${outfitItems.id}) as int)`,
+      })
+      .from(items)
+      .leftJoin(outfitItems, eq(items.id, outfitItems.itemId))
+      .where(eq(items.userId, userId))
+      .groupBy(items.id)
+      .orderBy(desc(items.createdAt));
   }
 
   async getItem(id: number, userId: string): Promise<Item | undefined> {

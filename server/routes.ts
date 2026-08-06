@@ -36,7 +36,7 @@ export async function registerRoutes(
   app.get("/api/items", isAuthenticated, async (req, res) => {
     try {
       const userId = getUserId(req);
-      const itemsList = await storage.getAllItems(userId);
+      const itemsList = await storage.getAllItemsWithWearCount(userId);
       res.json(itemsList);
     } catch (error) {
       console.error("Error fetching items:", error);

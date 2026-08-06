@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useSearch } from "wouter";
-import { Camera, Shirt, Calendar, LayoutGrid, List, Settings, Plus, X, Loader2, Check, ChevronDown, ChevronRight, LogIn, LogOut, User } from "lucide-react";
+import { Camera, Shirt, Calendar, LayoutGrid, List, Settings, Plus, X, Loader2, Check, ChevronDown, ChevronRight, LogIn, LogOut, User, ArrowDownWideNarrow } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,7 @@ import type { Item, Outfit } from "@shared/schema";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 
 type OutfitWithCount = Outfit & { itemCount: number };
+type ItemWithWearCount = Item & { wearCount: number };
 
 function getPreset(): "male" | "female" {
   return (localStorage.getItem("fitcheck-preset") as "male" | "female") || "male";
@@ -83,6 +84,7 @@ export default function Home() {
   const [bulkAddCategory, setBulkAddCategory] = useState<string | null>(null);
   const [bulkEntries, setBulkEntries] = useState<BulkEntry[]>([]);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [wardrobeSort, setWardrobeSort] = useState<"recent" | "wears">("recent");
   const { toast } = useToast();
   const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const [showDraftBanner, setShowDraftBanner] = useState(false);
@@ -103,7 +105,7 @@ export default function Home() {
     localStorage.setItem("fitcheck-preset", value);
   };
 
-  const { data: items, isLoading: itemsLoading } = useQuery<Item[]>({
+  const { data: items, isLoading: itemsLoading } = useQuery<ItemWithWearCount[]>({
     queryKey: ["/api/items"],
     enabled: isAuthenticated && !authLoading,
   });
@@ -122,8 +124,16 @@ export default function Home() {
       acc[category].push(item);
       return acc;
     },
-    {} as Record<string, Item[]>
+    {} as Record<string, ItemWithWearCount[]>
   );
+
+  // When sorting by wears, reorder items within each category (most-worn first);
+  // "recent" keeps the server's createdAt-desc order.
+  if (groupedItems && wardrobeSort === "wears") {
+    for (const category of Object.keys(groupedItems)) {
+      groupedItems[category].sort((a, b) => b.wearCount - a.wearCount);
+    }
+  }
 
   const startBulkAdd = (category: string) => {
     setBulkAddCategory(category);
@@ -425,7 +435,19 @@ export default function Home() {
             ) : (
               <>
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs text-muted-foreground">{items.length} items</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">{items.length} items</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs text-muted-foreground h-7 px-2 gap-1"
+                      onClick={() => setWardrobeSort((s) => (s === "recent" ? "wears" : "recent"))}
+                      data-testid="button-wardrobe-sort"
+                    >
+                      <ArrowDownWideNarrow className="h-3.5 w-3.5" />
+                      {wardrobeSort === "wears" ? "Most worn" : "Recent"}
+                    </Button>
+                  </div>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -602,6 +624,15 @@ export default function Home() {
                                         {item.color}
                                       </span>
                                     )}
+                                    <span
+                                      className={`ml-auto flex-shrink-0 text-xs tabular-nums ${
+                                        item.wearCount > 0 ? "text-muted-foreground" : "text-muted-foreground/40"
+                                      }`}
+                                      title={`Worn ${item.wearCount} time${item.wearCount !== 1 ? "s" : ""}`}
+                                      data-testid={`text-wear-count-${item.id}`}
+                                    >
+                                      {item.wearCount}×
+                                    </span>
                                   </div>
                                 </Link>
                               ))}

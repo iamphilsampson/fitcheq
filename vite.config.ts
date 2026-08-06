@@ -19,6 +19,15 @@ export default defineConfig({
         ]
       : []),
   ],
+  define: {
+    // Baked at build time so non-prod banners can show which version is live.
+    // We deploy via `railway up` (not GitHub), so the git SHA is often empty —
+    // the build timestamp is the reliable signal.
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    __BUILD_COMMIT__: JSON.stringify(
+      (process.env.RAILWAY_GIT_COMMIT_SHA ?? "").slice(0, 7),
+    ),
+  },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),

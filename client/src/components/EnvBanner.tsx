@@ -1,4 +1,4 @@
-import { appEnv, envLabel, isProduction } from "@/lib/env";
+import { appEnv, buildLabel, envLabel, isProduction } from "@/lib/env";
 
 /**
  * Slim fixed ribbon that marks any non-production environment (staging, local,
@@ -18,6 +18,14 @@ export function EnvBanner() {
       <span>{envLabel}</span>
       {appEnv === "staging" && (
         <span className="font-normal normal-case tracking-normal text-zinc-400">· test data</span>
+      )}
+      {buildLabel && (
+        <span
+          className="font-normal normal-case tracking-normal text-zinc-500"
+          data-testid="env-banner-build"
+        >
+          · {buildLabel}
+        </span>
       )}
     </div>
   );

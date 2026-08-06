@@ -20,6 +20,27 @@ export const appEnv: AppEnv = isProduction
       ? "local"
       : "preview";
 
+// Build stamp (baked by Vite `define`; see vite.config.ts). Guarded so the app
+// still runs if the defines are ever missing.
+export const buildTime: string =
+  typeof __BUILD_TIME__ !== "undefined" ? __BUILD_TIME__ : "";
+export const buildCommit: string =
+  typeof __BUILD_COMMIT__ !== "undefined" ? __BUILD_COMMIT__ : "";
+
+// Compact "6 Aug 14:32" style stamp for the non-prod banner.
+export const buildLabel: string = (() => {
+  if (!buildTime) return "";
+  const d = new Date(buildTime);
+  if (isNaN(d.getTime())) return "";
+  const stamp = d.toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return buildCommit ? `${stamp} · ${buildCommit}` : stamp;
+})();
+
 // Short label shown in the banner (empty for production, which shows no banner).
 export const envLabel: string = {
   production: "",
