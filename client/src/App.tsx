@@ -1,4 +1,5 @@
-import { Switch, Route } from "wouter";
+import { useEffect } from "react";
+import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -14,6 +15,22 @@ import Reconcile from "@/pages/reconcile";
 import ItemDetail from "@/pages/item-detail";
 import OutfitDetail from "@/pages/outfit-detail";
 import Activity from "@/pages/activity";
+
+/**
+ * Durable guard against a Radix modal freeze. Radix Dialog/AlertDialog set
+ * `pointer-events: none` on <body> while open and remove it on close. If a
+ * modal's page unmounts due to navigation (e.g. Delete → navigate) before that
+ * close cleanup runs, the style sticks and freezes the entire app until a
+ * force-restart. Clearing it on every route change makes that state impossible:
+ * any navigation self-heals, for every page — including ones added later.
+ */
+function PointerEventsGuard() {
+  const [location] = useLocation();
+  useEffect(() => {
+    document.body.style.pointerEvents = "";
+  }, [location]);
+  return null;
+}
 
 function Router() {
   return (
@@ -43,6 +60,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <div className={`max-w-md mx-auto min-h-dvh bg-background ${isProduction ? "" : "has-env-banner"}`}>
+          <PointerEventsGuard />
           <EnvBanner />
           <Toaster />
           <Gate />

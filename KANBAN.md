@@ -7,11 +7,6 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 ---
 
 ## 🔴 To Do
-- **[BUG] Deleting an item freezes the wardrobe** — after deleting an item you can't
-  expand categories or navigate; have to force-close the app. We fixed the equivalent for
-  deleting an *outfit* but not items. Find where else this pattern exists, fix it, and add
-  a guard so it can't recur (likely a stale/blocking state or an unresolved mutation on the
-  wardrobe/item-detail delete path).
 - **Wardrobe scroll + expand state should persist on back-nav** — backing out of an item
   returns to the fully-collapsed wardrobe, losing expand + scroll position; should restore
   where you were. Related idea to explore: open an item in a **modal/sheet** instead of a
@@ -31,9 +26,18 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - **AI item suggestions** (parked) — `/api/outfits/analyze` GPT-4o + reconcile pre-fill exist.
 - **Drag + pinch reposition of the cutout in the frame** (parked).
 - **Upload-your-own-background** (the "Your own" tile) (parked).
+- **[ROADMAP] Full codebase review / cleanup** — audit the whole codebase end-to-end:
+  ensure everything is current and consistent, and remove anything old or unused — dead code,
+  unused deps/exports, stale scaffolding (e.g. the dormant `server/replit_integrations`
+  once its future use is decided), orphaned assets, and out-of-date docs/comments. Produce a
+  findings list first (grouped by risk), then clean up in small, verifiable passes.
 
 ## 🟡 In Progress
-- _(nothing — pull the next item from To Do; branch off `main` first)_
+- **[BUG] Deleting an item freezes the wardrobe** — `fix/item-delete-freeze`. Root cause:
+  Radix AlertDialog leaves `pointer-events:none` on `<body>` when item-detail unmounts on the
+  post-delete navigate (outfit-detail had a local fix; item-detail didn't). Fix: global
+  `PointerEventsGuard` in App.tsx clears it on every route change (durable, covers all/future
+  pages) + local unmount cleanup added to item-detail for parity. Verifying on staging.
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
 - 2026-08-06 · **prod** — Promoted wear-count + build-stamp + auth-bypass batch to production;

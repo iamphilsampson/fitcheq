@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { ArrowLeft, Trash2, Loader2, Check, X, Pencil, MoreVertical } from "lucide-react";
@@ -45,6 +45,14 @@ export default function ItemDetail() {
   });
 
   const itemId = params?.id ? parseInt(params.id) : null;
+
+  // Radix can leave `pointer-events: none` on <body> if the delete AlertDialog
+  // unmounts (we navigate to the wardrobe after Delete) before its close
+  // cleanup runs, which would freeze the destination page. Restore it on
+  // unmount. (App-level PointerEventsGuard is the global backstop.)
+  useEffect(() => {
+    return () => { document.body.style.pointerEvents = ""; };
+  }, []);
 
   const { data: item, isLoading } = useQuery<ItemWithOutfits>({
     queryKey: ["/api/items", itemId],
