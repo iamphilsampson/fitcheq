@@ -7,10 +7,8 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 ---
 
 ## 🔴 To Do
-- **Full-screen the cut-out editor** — the editing window is small (max ~46vh); when
-  zoomed it's picky/hard to be precise. Make it fill the screen. _(next up)_
 - **Wear count on items + sort wardrobe by wears** — surface how many times each item
-  has been worn on the item, and let the wardrobe sort by most-worn.
+  has been worn on the item, and let the wardrobe sort by most-worn. _(good next pick)_
 - **Image on the outfit card** — show the outfit's image crisply on its card (nice, and
   useful later as training data for AI item identification).
 - **[PARKED] Cut-out quality** — shoes still bad + model makes parts of the *subject*
@@ -23,7 +21,6 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - **Object-URL leak in bg-picker preview** (review #4) — `URL.revokeObjectURL` only on
   `img.onload`; leaks on error and on rapid `selectedBg` changes. Add effect cleanup +
   onerror revoke in add-outfit & outfit-detail preview effects. Minor.
-- **Promote to prod + push branch** — once staging is trusted again.
 - **AI item suggestions** (parked) — `/api/outfits/analyze` GPT-4o + reconcile pre-fill exist.
 - **Drag + pinch reposition of the cutout in the frame** (parked).
 - **Upload-your-own-background** (the "Your own" tile) (parked).
