@@ -45,22 +45,17 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   connector/computer-use needed) — this is about seeing failures without a human in the loop.
 
 ## 🟡 In Progress
-- **Item interaction — PASS B: item opens as a MODAL — on staging, awaiting Phil's phone check.**
-  `feature/item-modal`. New `components/ItemModal.tsx` (Radix Dialog); Home is now the catch-all
-  route so `/items/:id` overlays the modal WITHOUT remounting the wardrobe. Verified on staging:
-  deep-link opens wardrobe + modal (wardrobe defaults to wardrobe tab behind); modal shows
-  header + ⋮ + outfit carousel (multi) / single photo; close (X) → `/?tab=wardrobe`, no
-  pointer-events freeze, wardrobe state preserved (14 rows still expanded, no remount);
-  tapping an outfit → `/outfits/:id` full page. a11y title warning fixed. Phil to confirm the
-  touch UX (esp. ⋮ Edit/Delete — verbatim ports of the old item page) on his phone.
-  Polish from Phil's review (fixed + verified on staging): first carousel image now padded
-  (`scroll-px-6`); close X no longer auto-focus-ringed on open (`onOpenAutoFocus` preventDefault).
-  PASS C done + verified on staging: phone back button closes the modal → wardrobe (doesn't exit
-  the app); X/Esc close pops history symmetrically (no dangling `/items/:id` entry that back would
-  reopen — history length stayed flat on close); cold deep-links replace to wardrobe.
-  → B + polish + C are complete on staging; ready to promote to prod + merge as one release.
+- _(nothing — pull the next item from To Do; branch off `main` first)_
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
+- 2026-08-06 · **prod** — Item interaction redesign (item-modal plan, passes B + C): items open
+  as a centered Radix Dialog over the wardrobe instead of a full page (`components/ItemModal.tsx`);
+  Home is the catch-all route so `/items/:id` overlays without remounting the wardrobe (scroll/
+  expand/tab preserved). Modal = header + ⋮ Edit/Delete + outfit carousel (or single photo) +
+  tap-through to the outfit; deep-link `/items/:id` still works. Polish: first carousel image
+  padded, no auto-focus ring on the X. Back button closes the modal (doesn't exit app); close is
+  history-symmetric (no reopen-on-back). Verified on staging; merged `feature/item-modal` → `main`.
+  Deleted the old `pages/item-detail.tsx`.
 - 2026-08-06 · **prod** — Wardrobe expand + scroll persistence (item-modal plan, pass A):
   `expandedCategories` + scroll saved to sessionStorage; back-nav from an item/outfit restores
   both (manual scrollRestoration + framewise retry + save gate). Verified on staging; merged
