@@ -41,9 +41,12 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   connector/computer-use needed) — this is about seeing failures without a human in the loop.
 
 ## 🟡 In Progress
-- **Wardrobe expand + scroll persistence — item-modal plan, PASS A** — `feature/wardrobe-persist`.
-  Persists `expandedCategories` + wardrobe scroll (sessionStorage) so returning from an
-  item/outfit restores state instead of a collapsed, top-of-page list. Verifying on staging.
+- **Wardrobe expand + scroll persistence — item-modal plan, PASS A — VERIFIED on staging,
+  ready to promote.** `feature/wardrobe-persist`. Persists `expandedCategories` + wardrobe
+  scroll (sessionStorage). Verified the real flow on staging: open item → back → wardrobe
+  restores BOTH expand (14 rows) and scroll (250px). Known minor gap: a HARD reload/deep-link
+  restores expand but not scroll (retry loses the layout-height race on cold fetch) — landing
+  at top on a full refresh is acceptable, and Pass B makes items a modal (no nav) anyway.
   Plan: A (this) → B item **modal** (Radix Dialog, no swipe; keep `/items/:id` as a real URL,
   modal opens over the wardrobe) → C tap-through to outfit-detail + back-closes-modal.
 
