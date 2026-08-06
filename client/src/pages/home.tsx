@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useSearch } from "wouter";
 import { Camera, Shirt, Calendar, LayoutGrid, List, Settings, Plus, X, Loader2, Check, ChevronDown, ChevronRight, LogIn, LogOut, User, ArrowDownWideNarrow } from "lucide-react";
@@ -83,7 +83,16 @@ export default function Home() {
   const [preset, setPreset] = useState<"male" | "female">(getPreset);
   const [bulkAddCategory, setBulkAddCategory] = useState<string | null>(null);
   const [bulkEntries, setBulkEntries] = useState<BulkEntry[]>([]);
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  // Persist wardrobe expand + scroll across navigation (sessionStorage) so returning
+  // from an item/outfit lands you where you were, not on a collapsed, top-of-page list.
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(() => {
+    try {
+      const saved = sessionStorage.getItem("fitcheck-wardrobe-expanded");
+      return saved ? new Set<string>(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
   const [wardrobeSort, setWardrobeSort] = useState<"recent" | "wears">("wears");
   const { toast } = useToast();
   const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
@@ -114,6 +123,47 @@ export default function Home() {
     queryKey: ["/api/outfits"],
     enabled: isAuthenticated && !authLoading,
   });
+
+  // Persist expanded categories whenever they change.
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        "fitcheck-wardrobe-expanded",
+        JSON.stringify([...expandedCategories]),
+      );
+    } catch {}
+  }, [expandedCategories]);
+
+  // Save wardrobe scroll position (rAF-throttled) so we can restore it on return.
+  useEffect(() => {
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        if (activeTab === "wardrobe") {
+          try {
+            sessionStorage.setItem("fitcheck-wardrobe-scroll", String(window.scrollY));
+          } catch {}
+        }
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [activeTab]);
+
+  // Restore wardrobe scroll once, after the list has rendered on this mount.
+  const scrollRestored = useRef(false);
+  useEffect(() => {
+    if (scrollRestored.current || activeTab !== "wardrobe" || itemsLoading) return;
+    scrollRestored.current = true;
+    const saved = sessionStorage.getItem("fitcheck-wardrobe-scroll");
+    const y = saved ? parseInt(saved, 10) : 0;
+    if (y > 0) requestAnimationFrame(() => window.scrollTo(0, y));
+  }, [activeTab, itemsLoading]);
 
   const groupedItems = items?.reduce(
     (acc, item) => {
