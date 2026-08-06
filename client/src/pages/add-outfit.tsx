@@ -600,7 +600,7 @@ export default function AddOutfit() {
 
         {isCleanupStep && cutoutBlob ? (
           // Part of step 2 (Background): optional manual cleanup of the cutout.
-          <CutoutEditor cutoutBlob={cutoutBlob} onDone={handleCleanupDone} />
+          <CutoutEditor cutoutBlob={cutoutBlob} onDone={handleCleanupDone} onBack={handleBack} />
 
         ) : isBgPickerMode && cutoutBlob ? (
           // Step 4: Background picker

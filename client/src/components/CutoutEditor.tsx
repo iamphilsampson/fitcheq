@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Eraser, Wand2, Undo2, RotateCcw, ArrowRight, Loader2, ZoomIn, ZoomOut } from "lucide-react";
+import { Eraser, Wand2, Undo2, RotateCcw, ArrowRight, ArrowLeft, Loader2, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -16,6 +16,8 @@ interface CutoutEditorProps {
    * caller can keep the original blob and avoid a needless re-encode).
    */
   onDone: (edited: Blob | null) => void;
+  /** Back out of the editor (the full-screen overlay hides the page header). */
+  onBack?: () => void;
 }
 
 // Edit at a capped resolution: matches the composite frame height (1600px tall)
@@ -39,7 +41,7 @@ const ERASE_OFFSET_CSS = 54;
  * Pinch (or the +/- buttons) to zoom and pan for precision. Undo + reset.
  * Erased areas show a checkerboard so it's obvious what becomes transparent.
  */
-export default function CutoutEditor({ cutoutBlob, onDone }: CutoutEditorProps) {
+export default function CutoutEditor({ cutoutBlob, onDone, onBack }: CutoutEditorProps) {
   const viewRef = useRef<HTMLCanvasElement>(null);
   // Off-screen "committed" cutout — the source of truth we edit and export.
   const baseRef = useRef<HTMLCanvasElement | null>(null);
@@ -409,22 +411,33 @@ export default function CutoutEditor({ cutoutBlob, onDone }: CutoutEditorProps) 
   };
 
   return (
-    <div className="space-y-3" data-testid="cutout-editor">
-      <div>
-        <p className="text-sm font-medium text-foreground">Clean up the cut-out</p>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Optional — tap to remove missed background, or erase by hand. Pinch to zoom. Checkerboard = removed.
-        </p>
+    <div className="cutout-overlay fixed inset-0 z-50 bg-background flex flex-col" data-testid="cutout-editor">
+      {/* Header — the overlay covers the page header, so carry a back button.
+          `.has-env-banner .cutout-overlay` (index.css) drops the top below the
+          env banner on non-prod; safe-area padding clears the notch on prod. */}
+      <div className="flex items-center gap-3 px-3 pt-[calc(0.5rem+env(safe-area-inset-top))] pb-2 border-b shrink-0">
+        {onBack && (
+          <Button variant="ghost" size="icon" onClick={onBack} disabled={finishing} data-testid="button-cleanup-back">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+        )}
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground leading-tight">Clean up the cut-out</p>
+          <p className="text-[11px] text-muted-foreground leading-tight truncate">
+            Tap to remove missed background, or erase. Pinch to zoom.
+          </p>
+        </div>
       </div>
 
-      <div className="relative rounded-xl overflow-hidden bg-muted flex items-center justify-center">
+      {/* Canvas fills the remaining screen. */}
+      <div className="relative flex-1 min-h-0 bg-muted flex items-center justify-center overflow-hidden">
         <canvas
           ref={viewRef}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
-          className="max-w-full max-h-[46vh] w-auto h-auto block touch-none cursor-crosshair"
+          className="max-w-full max-h-full w-auto h-auto block touch-none cursor-crosshair"
           style={{
             backgroundImage:
               "linear-gradient(45deg,#e2e2e2 25%,transparent 25%),linear-gradient(-45deg,#e2e2e2 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e2e2e2 75%),linear-gradient(-45deg,transparent 75%,#e2e2e2 75%)",
@@ -434,12 +447,11 @@ export default function CutoutEditor({ cutoutBlob, onDone }: CutoutEditorProps) 
           }}
           data-testid="canvas-cutout-editor"
         />
-        {/* Zoom controls */}
         <div className="absolute right-2 top-2 flex flex-col gap-1">
-          <Button variant="secondary" size="icon" className="h-8 w-8 shadow" onClick={() => zoomButton(1)} data-testid="button-zoom-in" title="Zoom in">
+          <Button variant="secondary" size="icon" className="h-9 w-9 shadow" onClick={() => zoomButton(1)} data-testid="button-zoom-in" title="Zoom in">
             <ZoomIn className="h-4 w-4" />
           </Button>
-          <Button variant="secondary" size="icon" className="h-8 w-8 shadow" onClick={() => zoomButton(-1)} disabled={zoom <= MIN_SCALE} data-testid="button-zoom-out" title="Zoom out">
+          <Button variant="secondary" size="icon" className="h-9 w-9 shadow" onClick={() => zoomButton(-1)} disabled={zoom <= MIN_SCALE} data-testid="button-zoom-out" title="Zoom out">
             <ZoomOut className="h-4 w-4" />
           </Button>
         </div>
@@ -450,49 +462,52 @@ export default function CutoutEditor({ cutoutBlob, onDone }: CutoutEditorProps) 
         )}
       </div>
 
-      <div className="flex items-center gap-2">
-        <ToggleGroup
-          type="single"
-          value={mode}
-          onValueChange={(v) => v && setMode(v as Mode)}
-          variant="outline"
-          className="justify-start"
-        >
-          <ToggleGroupItem value="wand" className="gap-1.5 px-3" data-testid="toggle-wand">
-            <Wand2 className="h-4 w-4" /> Magic
-          </ToggleGroupItem>
-          <ToggleGroupItem value="erase" className="gap-1.5 px-3" data-testid="toggle-erase">
-            <Eraser className="h-4 w-4" /> Erase
-          </ToggleGroupItem>
-        </ToggleGroup>
+      {/* Controls pinned to the bottom. */}
+      <div className="shrink-0 border-t px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] space-y-2 bg-background">
+        <div className="flex items-center gap-2">
+          <ToggleGroup
+            type="single"
+            value={mode}
+            onValueChange={(v) => v && setMode(v as Mode)}
+            variant="outline"
+            className="justify-start"
+          >
+            <ToggleGroupItem value="wand" className="gap-1.5 px-3" data-testid="toggle-wand">
+              <Wand2 className="h-4 w-4" /> Magic
+            </ToggleGroupItem>
+            <ToggleGroupItem value="erase" className="gap-1.5 px-3" data-testid="toggle-erase">
+              <Eraser className="h-4 w-4" /> Erase
+            </ToggleGroupItem>
+          </ToggleGroup>
 
-        <div className="ml-auto flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={undo} disabled={!canUndo} title="Undo" data-testid="button-undo">
-            <Undo2 className="h-5 w-5" />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={reset} disabled={!edited} title="Reset" data-testid="button-reset-edits">
-            <RotateCcw className="h-5 w-5" />
-          </Button>
+          <div className="ml-auto flex items-center gap-1">
+            <Button variant="ghost" size="icon" onClick={undo} disabled={!canUndo} title="Undo" data-testid="button-undo">
+              <Undo2 className="h-5 w-5" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={reset} disabled={!edited} title="Reset" data-testid="button-reset-edits">
+              <RotateCcw className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
+
+        {mode === "erase" ? (
+          <div className="flex items-center gap-3" data-testid="brush-size-control">
+            <span className="text-xs text-muted-foreground shrink-0 w-16">Brush</span>
+            <Slider min={8} max={maxBrush} step={2} value={[brush]} onValueChange={(v) => setBrush(v[0])} className="flex-1" data-testid="slider-brush" />
+          </div>
+        ) : (
+          <div className="flex items-center gap-3" data-testid="tolerance-control">
+            <span className="text-xs text-muted-foreground shrink-0 w-16">Sensitivity</span>
+            <Slider min={8} max={100} step={2} value={[tolerance]} onValueChange={(v) => setTolerance(v[0])} className="flex-1" data-testid="slider-tolerance" />
+          </div>
+        )}
+
+        <Button className="w-full gap-2" size="lg" onClick={finish} disabled={!loaded || finishing} data-testid="button-cleanup-done">
+          {finishing
+            ? <><Loader2 className="h-5 w-5 animate-spin" /> Applying…</>
+            : <>Next: Background <ArrowRight className="h-5 w-5" /></>}
+        </Button>
       </div>
-
-      {mode === "erase" ? (
-        <div className="flex items-center gap-3" data-testid="brush-size-control">
-          <span className="text-xs text-muted-foreground shrink-0 w-16">Brush</span>
-          <Slider min={8} max={maxBrush} step={2} value={[brush]} onValueChange={(v) => setBrush(v[0])} className="flex-1" data-testid="slider-brush" />
-        </div>
-      ) : (
-        <div className="flex items-center gap-3" data-testid="tolerance-control">
-          <span className="text-xs text-muted-foreground shrink-0 w-16">Sensitivity</span>
-          <Slider min={8} max={100} step={2} value={[tolerance]} onValueChange={(v) => setTolerance(v[0])} className="flex-1" data-testid="slider-tolerance" />
-        </div>
-      )}
-
-      <Button className="w-full gap-2" size="lg" onClick={finish} disabled={!loaded || finishing} data-testid="button-cleanup-done">
-        {finishing
-          ? <><Loader2 className="h-5 w-5 animate-spin" /> Applying…</>
-          : <>Next: Background <ArrowRight className="h-5 w-5" /></>}
-      </Button>
     </div>
   );
 }

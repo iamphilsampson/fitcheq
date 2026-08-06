@@ -643,7 +643,7 @@ export default function OutfitDetail() {
         {showPhotoOptions ? (
           isCleanupStep && cutoutBlob ? (
             // Optional manual cleanup of the cutout (erase / lasso).
-            <CutoutEditor cutoutBlob={cutoutBlob} onDone={handleCleanupDone} />
+            <CutoutEditor cutoutBlob={cutoutBlob} onDone={handleCleanupDone} onBack={cancelPhotoEdit} />
 
           ) : isBgPickerMode && cutoutBlob ? (
             // Background picker — mirrors the Add Outfit flow (translucent bar

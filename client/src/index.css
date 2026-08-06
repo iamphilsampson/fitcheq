@@ -14,6 +14,11 @@
 .has-env-banner header.sticky {
   top: var(--env-banner-h);
 }
+/* The full-screen cut-out editor (fixed inset-0) must clear the env banner too,
+   which sits above it at z-[60]. */
+.has-env-banner .cutout-overlay {
+  top: var(--env-banner-h);
+}
 /* Any full-height element inside the banner layout must reserve the banner's
    height, otherwise banner + 100dvh content overflows by the banner height and
    leaves a strip of blank scroll. */
