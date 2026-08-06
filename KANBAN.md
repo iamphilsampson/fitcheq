@@ -46,11 +46,16 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   connector/computer-use needed) — this is about seeing failures without a human in the loop.
 
 ## 🟡 In Progress
-- **[ROADMAP] Full codebase review / cleanup** — Phase 1 (audit) underway: fan-out review of
-  dead scaffolding, unused UI/deps, and stale docs → risk-grouped findings list for Phil to
-  approve, then Phase 2 cleanup in small verifiable passes. Read-only so far; no branch yet.
+- _(nothing — pull the next item from To Do; branch off `main` first)_
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
+- 2026-08-06 · **prod** — Full codebase review + cleanup (4 passes): removed dead Replit
+  scaffolding (audio/batch/chat/image + client audio + models/chat), 27 unused shadcn
+  components + 5 dead client files, ~40 unused npm packages, and stale docs/config
+  (replit.md, .replit, post-merge.sh, attached_assets/ ~52MB, stale migration). Refreshed
+  CLAUDE.md + BACKGROUND_REMOVAL.md. Net ~7.4k lines removed. Verified on staging (wardrobe,
+  outfit/item detail, add-outfit — zero console errors); merged `chore/codebase-cleanup` →
+  `main`. (attached_assets still in git history — see roadmap item to reclaim.)
 - 2026-08-06 · **prod** — Clean deploys / kill false "crashed" notification: Railway
   `startCommand: node dist/index.cjs` (node gets SIGTERM directly instead of npm reporting it
   as a crash) + graceful SIGTERM/SIGINT shutdown + `GET /api/health` + `railway.json`
