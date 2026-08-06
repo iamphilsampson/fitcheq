@@ -52,10 +52,13 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   header + ⋮ + outfit carousel (multi) / single photo; close (X) → `/?tab=wardrobe`, no
   pointer-events freeze, wardrobe state preserved (14 rows still expanded, no remount);
   tapping an outfit → `/outfits/:id` full page. a11y title warning fixed. Phil to confirm the
-  touch UX (esp. ⋮ Edit/Delete — verbatim ports of the old item page) on his phone. Then Pass C:
-  back-button-closes-modal history handling (optional polish).
+  touch UX (esp. ⋮ Edit/Delete — verbatim ports of the old item page) on his phone.
   Polish from Phil's review (fixed + verified on staging): first carousel image now padded
   (`scroll-px-6`); close X no longer auto-focus-ringed on open (`onOpenAutoFocus` preventDefault).
+  PASS C done + verified on staging: phone back button closes the modal → wardrobe (doesn't exit
+  the app); X/Esc close pops history symmetrically (no dangling `/items/:id` entry that back would
+  reopen — history length stayed flat on close); cold deep-links replace to wardrobe.
+  → B + polish + C are complete on staging; ready to promote to prod + merge as one release.
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
 - 2026-08-06 · **prod** — Wardrobe expand + scroll persistence (item-modal plan, pass A):
