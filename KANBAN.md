@@ -41,7 +41,9 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   connector/computer-use needed) — this is about seeing failures without a human in the loop.
 
 ## 🟡 In Progress
-- _(nothing — pull the next item from To Do; branch off `main` first)_
+- **[ROADMAP] Full codebase review / cleanup** — Phase 1 (audit) underway: fan-out review of
+  dead scaffolding, unused UI/deps, and stale docs → risk-grouped findings list for Phil to
+  approve, then Phase 2 cleanup in small verifiable passes. Read-only so far; no branch yet.
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
 - 2026-08-06 · **prod** — Clean deploys / kill false "crashed" notification: Railway
