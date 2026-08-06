@@ -41,7 +41,11 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   connector/computer-use needed) — this is about seeing failures without a human in the loop.
 
 ## 🟡 In Progress
-- _(nothing — pull the next item from To Do; branch off `main` first)_
+- **Wardrobe expand + scroll persistence — item-modal plan, PASS A** — `feature/wardrobe-persist`.
+  Persists `expandedCategories` + wardrobe scroll (sessionStorage) so returning from an
+  item/outfit restores state instead of a collapsed, top-of-page list. Verifying on staging.
+  Plan: A (this) → B item **modal** (Radix Dialog, no swipe; keep `/items/:id` as a real URL,
+  modal opens over the wardrobe) → C tap-through to outfit-detail + back-closes-modal.
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
 - 2026-08-06 · **prod** — Full codebase review + cleanup (4 passes): removed dead Replit
