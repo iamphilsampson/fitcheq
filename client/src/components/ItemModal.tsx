@@ -120,7 +120,10 @@ export function ItemModal({ itemId, onClose }: { itemId: number; onClose: () => 
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-sm max-h-[85vh] overflow-y-auto rounded-2xl">
+      <DialogContent
+        className="max-w-[calc(100vw-2rem)] sm:max-w-sm max-h-[85vh] overflow-y-auto rounded-2xl"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         {isLoading || !item ? (
           <div className="space-y-4 py-2">
             <DialogTitle className="sr-only">Item</DialogTitle>
@@ -225,7 +228,7 @@ export function ItemModal({ itemId, onClose }: { itemId: number; onClose: () => 
                   Worn in {outfitCount} outfit{outfitCount !== 1 ? "s" : ""}
                 </p>
                 {outfitCount > 0 ? (
-                  <div className="flex gap-2.5 overflow-x-auto -mx-6 px-6 pb-1 snap-x snap-mandatory">
+                  <div className="flex gap-2.5 overflow-x-auto -mx-6 px-6 scroll-px-6 pb-1 snap-x snap-mandatory">
                     {item.outfits.map((outfit) => (
                       <button
                         key={outfit.id}
