@@ -85,6 +85,25 @@ export default function Home() {
   const initialTab =
     searchParams.get("tab") === "wardrobe" || isItemRoute ? "wardrobe" : "outfits";
 
+  // Was the item modal opened from within the app (so there's a wardrobe entry to
+  // pop back to), vs. a cold deep-link/refresh straight onto /items/:id?
+  const itemOpenedInApp = useRef(false);
+  useEffect(() => {
+    if (!isItemRoute) itemOpenedInApp.current = true;
+  }, [isItemRoute]);
+
+  // Close the item modal. When opened in-app, pop history so the phone's back
+  // button and the X behave identically (no dangling /items/:id entry that a
+  // later back-press would reopen). On a cold deep-link, replace instead so we
+  // don't fall out of the app.
+  const closeItemModal = () => {
+    if (itemOpenedInApp.current) {
+      window.history.back();
+    } else {
+      navigate("/?tab=wardrobe", { replace: true });
+    }
+  };
+
   const [activeTab, setActiveTab] = useState(initialTab);
   const [outfitViewMode, setOutfitViewMode] = useState<"card" | "feed">("card");
   const [showSettings, setShowSettings] = useState(false);
@@ -309,7 +328,7 @@ export default function Home() {
       {isItemRoute && itemParams && (
         <ItemModal
           itemId={Number(itemParams.id)}
-          onClose={() => navigate("/?tab=wardrobe")}
+          onClose={closeItemModal}
         />
       )}
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
