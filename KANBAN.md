@@ -27,7 +27,10 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - **Upload-your-own-background** (the "Your own" tile) (parked).
 
 ## 🟡 In Progress
-- _(nothing — pull the next item from To Do; branch off `main` first)_
+- **Re-crop on re-clean + move "View original" into the ⋮ menu** (outfit-detail).
+  Add a crop step before bg-removal in the Remove-bg / Replace flows (so side clutter
+  is cropped out, matching the add flow). And move the View-original toggle off the
+  floating image icon into the ⋮ dropdown. Branch: `feature/recrop-reclean`.
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
 - 2026-08-06 · main — Merge `migrate-off-replit` → `main` (fast-forward, pushed).
