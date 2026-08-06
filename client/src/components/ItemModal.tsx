@@ -123,6 +123,8 @@ export function ItemModal({ itemId, onClose }: { itemId: number; onClose: () => 
       <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-sm max-h-[85vh] overflow-y-auto rounded-2xl">
         {isLoading || !item ? (
           <div className="space-y-4 py-2">
+            <DialogTitle className="sr-only">Item</DialogTitle>
+            <DialogDescription className="sr-only">Loading item details</DialogDescription>
             <Skeleton className="h-7 w-40" />
             <Skeleton className="h-4 w-56" />
             <Skeleton className="h-40 w-full" />
