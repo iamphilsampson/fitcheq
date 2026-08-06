@@ -26,11 +26,6 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - **AI item suggestions** (parked) — `/api/outfits/analyze` GPT-4o + reconcile pre-fill exist.
 - **Drag + pinch reposition of the cutout in the frame** (parked).
 - **Upload-your-own-background** (the "Your own" tile) (parked).
-- **[ROADMAP] Full codebase review / cleanup** — audit the whole codebase end-to-end:
-  ensure everything is current and consistent, and remove anything old or unused — dead code,
-  unused deps/exports, stale scaffolding (e.g. the dormant `server/replit_integrations`
-  once its future use is decided), orphaned assets, and out-of-date docs/comments. Produce a
-  findings list first (grouped by risk), then clean up in small, verifiable passes.
 - **[ROADMAP] Reclaim ~52MB of git history from deleted `attached_assets/`** — the 24
   orphaned images were removed from the working tree (cleanup pass 4) but still live in git
   history, so the repo/clone stays ~52MB heavier. Reclaiming needs a **history rewrite**
