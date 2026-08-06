@@ -31,13 +31,6 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   unused deps/exports, stale scaffolding (e.g. the dormant `server/replit_integrations`
   once its future use is decided), orphaned assets, and out-of-date docs/comments. Produce a
   findings list first (grouped by risk), then clean up in small, verifiable passes.
-- **[ROADMAP] Kill the "Railway crashed" notification on every deploy** — root cause: the
-  server has **no SIGTERM handler** (server/index.ts), so on redeploy Railway's SIGTERM to the
-  old container gets force-killed (non-zero exit) → flagged as a crash. Also **no healthcheck**
-  is configured, so deploys aren't zero-downtime. Fix: (1) graceful shutdown — `process.on
-  ("SIGTERM"/"SIGINT")` → `httpServer.close()` → `exit(0)`; (2) add `GET /api/health` → 200 and a
-  `railway.json` with `healthcheckPath` so Railway waits for the new instance before killing the
-  old. Small; removes the false alarm and gives clean rolling deploys.
 - **[ROADMAP] Testing & observability so Claude can verify/​debug autonomously** — (a) an
   **e2e test suite** (Playwright against staging using the `AUTH_DISABLED` bypass + the
   `data-testid`s already in the UI) so flows like add-outfit / delete / tagging are checked
