@@ -1,5 +1,9 @@
 # FitCheq — project guide
 
+> **▶ START EVERY SESSION HERE:** read **`KANBAN.md`** first — To Do / In Progress /
+> Done (the Done column is the running changelog). Resume whatever is In Progress, and
+> follow the ship-small workflow below.
+
 Personal, single-user wardrobe app. Log outfits (photo + date + notes), build a
 wardrobe of items grouped by category, link items to outfits. Optional AI:
 background removal on outfit photos, and clothing detection from a photo.

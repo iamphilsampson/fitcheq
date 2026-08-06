@@ -28,11 +28,8 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - **Drag + pinch reposition of the cutout in the frame** (parked).
 - **Upload-your-own-background** (the "Your own" tile) (parked).
 
-## 🟡 In Progress — re-clean / editor UX (branch `feature/recrop-reclean`, → staging → prod together)
-- ✅ Re-crop on re-clean + View-original in ⋮ menu — on staging.
-- ✅ Full-screen cut-out editor — on staging (11:00).
-- ✅ White editor background + edit full-width when zoomed — on staging.
-- ⏳ Awaiting Phil's phone test of the bundle, then promote to prod together.
+## 🟡 In Progress
+- _(nothing — pull the next item from To Do; branch off `main` first)_
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
 - 2026-08-06 · main — Merge `migrate-off-replit` → `main` (fast-forward, pushed).
@@ -49,3 +46,4 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - 2026-08-06 · staging — Re-crop step on re-clean (trim clutter before removal) + View-original moved to the ⋮ menu.
 - 2026-08-06 · staging — Full-screen cut-out editor (big canvas, controls pinned; clears the env banner).
 - 2026-08-06 · staging — Editor: white background (spot faded blemishes) + edit full-width when zoomed.
+- 2026-08-06 · **prod** — Promoted the re-clean/editor UX bundle to production (re-crop on re-clean, View-original in ⋮ menu, full-screen editor, white bg + full-width zoom); merged `feature/recrop-reclean` → `main`.
