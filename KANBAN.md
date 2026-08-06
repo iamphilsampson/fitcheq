@@ -48,16 +48,12 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   connector/computer-use needed) — this is about seeing failures without a human in the loop.
 
 ## 🟡 In Progress
-- **[BUG] Deleting an item freezes the wardrobe — FIXED, verified on staging, ready to
-  promote → prod.** `fix/item-delete-freeze`. Root cause: Radix AlertDialog leaves
-  `pointer-events:none` on `<body>` when item-detail unmounts on the post-delete navigate
-  (outfit-detail had a local fix; item-detail didn't). Fix: global `PointerEventsGuard` in
-  App.tsx clears it on every route change (durable, covers all/future pages) + local unmount
-  cleanup added to item-detail for parity. Staging repro confirmed fixed: delete → back to
-  wardrobe, `body` pointer-events `auto`, categories expand/click fine. On go-ahead →
-  `railway up -e production` + merge to `main`.
+- _(nothing — pull the next item from To Do; branch off `main` first)_
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
+- 2026-08-06 · **prod** — Fix item-delete wardrobe freeze: global `PointerEventsGuard` (clears
+  stray Radix `pointer-events:none` on every route change) + item-detail unmount cleanup.
+  Verified on staging (delete → interactive wardrobe); merged `fix/item-delete-freeze` → `main`.
 - 2026-08-06 · **prod** — Promoted wear-count + build-stamp + auth-bypass batch to production;
   merged `feature/wear-count` → `main` (pushed). Prod verified: no banner, login gate intact.
   Default wardrobe sort is now **Most worn**. `AUTH_DISABLED` is hard-guarded to be ignored on
