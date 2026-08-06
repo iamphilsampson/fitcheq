@@ -27,8 +27,8 @@ const MAX_EDIT_SIDE = 1600;
 // Undo depth. Each snapshot is a full ImageData (~7.7MB at 1600px on portrait);
 // capped low to bound peak memory on mobile Safari.
 const HISTORY_LIMIT = 5;
-const MIN_SCALE = 1;
-const MAX_SCALE = 6;
+// Max zoom, as a multiple of the fit-to-screen scale.
+const MAX_ZOOM = 6;
 // The erase target sits this many CSS px ABOVE the finger so it isn't hidden.
 const ERASE_OFFSET_CSS = 54;
 
@@ -39,10 +39,14 @@ const ERASE_OFFSET_CSS = 54;
  *  - Magic-wand: tap a leftover background patch to remove the connected region
  *    of similar colour (adjustable tolerance) — for bits the model missed.
  * Pinch (or the +/- buttons) to zoom and pan for precision. Undo + reset.
- * Erased areas show a checkerboard so it's obvious what becomes transparent.
+ * The canvas fills the screen (edit anywhere, even zoomed) and removed/transparent
+ * areas read as blank white so faded/translucent blemishes are easy to spot.
  */
 export default function CutoutEditor({ cutoutBlob, onDone, onBack }: CutoutEditorProps) {
   const viewRef = useRef<HTMLCanvasElement>(null);
+  // The canvas fills this container; we size the drawing buffer to its box so the
+  // whole screen is the editable area (not just the cutout's narrow strip).
+  const containerRef = useRef<HTMLDivElement>(null);
   // Off-screen "committed" cutout — the source of truth we edit and export.
   const baseRef = useRef<HTMLCanvasElement | null>(null);
   const originalRef = useRef<ImageData | null>(null);
@@ -55,7 +59,10 @@ export default function CutoutEditor({ cutoutBlob, onDone, onBack }: CutoutEdito
   const toleranceRef = useRef(32);
 
   // View transform: content is drawn at base*scale + pan (in view-canvas px).
+  // scaleRef is the absolute base→view scale; fitRef is the scale that fits the
+  // whole cutout in the view (the minimum / "1× zoom").
   const scaleRef = useRef(1);
+  const fitRef = useRef(1);
   const panRef = useRef<Pt>({ x: 0, y: 0 });
   // Active pointers (id -> view px) for pinch-zoom/pan.
   const pointersRef = useRef<Map<number, Pt>>(new Map());
@@ -74,12 +81,14 @@ export default function CutoutEditor({ cutoutBlob, onDone, onBack }: CutoutEdito
   const [finishing, setFinishing] = useState(false);
   const [zoom, setZoom] = useState(1);
 
+  // Keep the scaled cutout within the view; centre it on whichever axis it's
+  // smaller than the view (so a narrow cutout sits centred on a full-width canvas).
   const clampPan = (scale: number, pan: Pt): Pt => {
-    const base = baseRef.current;
-    if (!base) return pan;
+    const view = viewRef.current, base = baseRef.current;
+    if (!view || !base) return pan;
     const sw = base.width * scale, sh = base.height * scale;
-    const x = sw <= base.width ? (base.width - sw) / 2 : Math.min(0, Math.max(base.width - sw, pan.x));
-    const y = sh <= base.height ? (base.height - sh) / 2 : Math.min(0, Math.max(base.height - sh, pan.y));
+    const x = sw <= view.width ? (view.width - sw) / 2 : Math.min(0, Math.max(view.width - sw, pan.x));
+    const y = sh <= view.height ? (view.height - sh) / 2 : Math.min(0, Math.max(view.height - sh, pan.y));
     return { x, y };
   };
 
@@ -112,6 +121,38 @@ export default function CutoutEditor({ cutoutBlob, onDone, onBack }: CutoutEdito
     }
   }, []);
 
+  const centerPan = (scale: number): Pt => {
+    const view = viewRef.current, base = baseRef.current;
+    if (!view || !base) return { x: 0, y: 0 };
+    return { x: (view.width - base.width * scale) / 2, y: (view.height - base.height * scale) / 2 };
+  };
+
+  // Size the drawing buffer to the container box and fit the cutout into it
+  // (centred). Called on load and whenever the container resizes.
+  const sizeAndFit = useCallback(() => {
+    const view = viewRef.current, base = baseRef.current, cont = containerRef.current;
+    if (!view || !base || !cont) return;
+    const w = Math.max(1, Math.round(cont.clientWidth));
+    const h = Math.max(1, Math.round(cont.clientHeight));
+    view.width = w;
+    view.height = h;
+    const fit = Math.min(w / base.width, h / base.height);
+    fitRef.current = fit;
+    scaleRef.current = fit;
+    panRef.current = centerPan(fit);
+    setZoom(1);
+    redrawView();
+  }, [redrawView]);
+
+  // Re-fit whenever the container resizes (mount, rotation).
+  useEffect(() => {
+    const cont = containerRef.current;
+    if (!cont || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => sizeAndFit());
+    ro.observe(cont);
+    return () => ro.disconnect();
+  }, [sizeAndFit]);
+
   // Load the cutout into the base canvas whenever the source blob changes.
   useEffect(() => {
     let revoked = false;
@@ -132,14 +173,9 @@ export default function CutoutEditor({ cutoutBlob, onDone, onBack }: CutoutEdito
       bctx.drawImage(img, 0, 0, w, h);
       baseRef.current = base;
       originalRef.current = bctx.getImageData(0, 0, w, h);
-      const view = viewRef.current;
-      if (view) { view.width = w; view.height = h; }
       historyRef.current = [];
       lastBaseRef.current = null;
       ringRef.current = null;
-      scaleRef.current = 1;
-      panRef.current = { x: 0, y: 0 };
-      setZoom(1);
       setCanUndo(false);
       setEdited(false);
       const defaultBrush = Math.round(Math.max(24, w * 0.05));
@@ -147,13 +183,13 @@ export default function CutoutEditor({ cutoutBlob, onDone, onBack }: CutoutEdito
       setBrush(defaultBrush);
       setMaxBrush(Math.max(60, Math.round(w * 0.3)));
       setLoaded(true);
-      redrawView();
+      sizeAndFit(); // size the view to the container + fit the cutout in
       revoke();
     };
     img.onerror = revoke;
     img.src = url;
     return revoke;
-  }, [cutoutBlob, redrawView]);
+  }, [cutoutBlob, sizeAndFit]);
 
   useEffect(() => { modeRef.current = mode; ringRef.current = null; redrawView(); }, [mode, redrawView]);
   useEffect(() => { brushRef.current = brush; }, [brush]);
@@ -246,7 +282,8 @@ export default function CutoutEditor({ cutoutBlob, onDone, onBack }: CutoutEdito
     const base = baseRef.current;
     if (!base) return;
     const s0 = scaleRef.current;
-    const s1 = Math.max(MIN_SCALE, Math.min(MAX_SCALE, nextScale));
+    const fit = fitRef.current;
+    const s1 = Math.max(fit, Math.min(fit * MAX_ZOOM, nextScale));
     const p0 = panRef.current;
     // Keep the focus point stationary: p1 = focus - (focus - p0) * (s1/s0)
     const p1 = {
@@ -255,13 +292,13 @@ export default function CutoutEditor({ cutoutBlob, onDone, onBack }: CutoutEdito
     };
     scaleRef.current = s1;
     panRef.current = clampPan(s1, p1);
-    setZoom(Math.round(s1 * 10) / 10);
+    setZoom(Math.round((s1 / fit) * 10) / 10);
     redrawView();
   };
   const zoomButton = (dir: 1 | -1) => {
-    const base = baseRef.current;
-    if (!base) return;
-    applyZoom(scaleRef.current * (dir > 0 ? 1.5 : 1 / 1.5), { x: base.width / 2, y: base.height / 2 });
+    const view = viewRef.current;
+    if (!view) return;
+    applyZoom(scaleRef.current * (dir > 0 ? 1.5 : 1 / 1.5), { x: view.width / 2, y: view.height / 2 });
   };
 
   // ---- Pointer handling ----
@@ -393,13 +430,10 @@ export default function CutoutEditor({ cutoutBlob, onDone, onBack }: CutoutEdito
     if (!orig || !base) return;
     base.getContext("2d")?.putImageData(orig, 0, 0);
     historyRef.current = [];
-    scaleRef.current = 1;
-    panRef.current = { x: 0, y: 0 };
     ringRef.current = null;
-    setZoom(1);
     setCanUndo(false);
     setEdited(false);
-    redrawView();
+    sizeAndFit(); // restore fit-to-screen zoom + centre
   };
 
   const finish = () => {
@@ -429,29 +463,22 @@ export default function CutoutEditor({ cutoutBlob, onDone, onBack }: CutoutEdito
         </div>
       </div>
 
-      {/* Canvas fills the remaining screen. */}
-      <div className="relative flex-1 min-h-0 bg-muted flex items-center justify-center overflow-hidden">
+      {/* Canvas fills the remaining screen (buffer sized to this box). */}
+      <div ref={containerRef} className="relative flex-1 min-h-0 bg-white flex items-center justify-center overflow-hidden">
         <canvas
           ref={viewRef}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
-          className="max-w-full max-h-full w-auto h-auto block touch-none cursor-crosshair"
-          style={{
-            backgroundImage:
-              "linear-gradient(45deg,#e2e2e2 25%,transparent 25%),linear-gradient(-45deg,#e2e2e2 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e2e2e2 75%),linear-gradient(-45deg,transparent 75%,#e2e2e2 75%)",
-            backgroundSize: "18px 18px",
-            backgroundPosition: "0 0,0 9px,9px -9px,-9px 0",
-            backgroundColor: "#f6f6f6",
-          }}
+          className="w-full h-full block touch-none cursor-crosshair"
           data-testid="canvas-cutout-editor"
         />
         <div className="absolute right-2 top-2 flex flex-col gap-1">
           <Button variant="secondary" size="icon" className="h-9 w-9 shadow" onClick={() => zoomButton(1)} data-testid="button-zoom-in" title="Zoom in">
             <ZoomIn className="h-4 w-4" />
           </Button>
-          <Button variant="secondary" size="icon" className="h-9 w-9 shadow" onClick={() => zoomButton(-1)} disabled={zoom <= MIN_SCALE} data-testid="button-zoom-out" title="Zoom out">
+          <Button variant="secondary" size="icon" className="h-9 w-9 shadow" onClick={() => zoomButton(-1)} disabled={zoom <= 1} data-testid="button-zoom-out" title="Zoom out">
             <ZoomOut className="h-4 w-4" />
           </Button>
         </div>
