@@ -11,6 +11,10 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   returns to the fully-collapsed wardrobe, losing expand + scroll position; should restore
   where you were. Related idea to explore: open an item in a **modal/sheet** instead of a
   full page navigation — avoids the whole back-nav state-loss problem and feels sleeker.
+- **Toast messages — annoying + look bad** — audit every `toast(...)` call
+  (`hooks/use-toast.ts` + `components/ui/toast.tsx` + `toaster.tsx`): cut noisy/low-value
+  ones (fire only for real confirmations + errors), and restyle to match the app
+  (position, duration, size, colours). Phil finds them intrusive and off-brand.
 - **Image on the outfit card** — show the outfit's image crisply on its card (nice, and
   useful later as training data for AI item identification). _(NOT started — Phil + Claude
   to align on the vision before building.)_
