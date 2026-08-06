@@ -7,6 +7,15 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 ---
 
 ## 🔴 To Do
+- **[BUG] Deleting an item freezes the wardrobe** — after deleting an item you can't
+  expand categories or navigate; have to force-close the app. We fixed the equivalent for
+  deleting an *outfit* but not items. Find where else this pattern exists, fix it, and add
+  a guard so it can't recur (likely a stale/blocking state or an unresolved mutation on the
+  wardrobe/item-detail delete path).
+- **Wardrobe scroll + expand state should persist on back-nav** — backing out of an item
+  returns to the fully-collapsed wardrobe, losing expand + scroll position; should restore
+  where you were. Related idea to explore: open an item in a **modal/sheet** instead of a
+  full page navigation — avoids the whole back-nav state-loss problem and feels sleeker.
 - **Image on the outfit card** — show the outfit's image crisply on its card (nice, and
   useful later as training data for AI item identification). _(NOT started — Phil + Claude
   to align on the vision before building.)_

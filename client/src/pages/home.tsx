@@ -84,7 +84,7 @@ export default function Home() {
   const [bulkAddCategory, setBulkAddCategory] = useState<string | null>(null);
   const [bulkEntries, setBulkEntries] = useState<BulkEntry[]>([]);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
-  const [wardrobeSort, setWardrobeSort] = useState<"recent" | "wears">("recent");
+  const [wardrobeSort, setWardrobeSort] = useState<"recent" | "wears">("wears");
   const { toast } = useToast();
   const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const [showDraftBanner, setShowDraftBanner] = useState(false);

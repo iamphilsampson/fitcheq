@@ -24,8 +24,12 @@ const OWNER_ID = process.env.OWNER_USER_ID || "103113185755418009684";
 
 // Escape hatch for non-prod: when AUTH_DISABLED=true, every request is treated
 // as the owner (no login gate). Intended ONLY for staging so it can be tested
-// without a session — NEVER set this on production. Reversible: unset the var.
-const AUTH_DISABLED = process.env.AUTH_DISABLED === "true";
+// without a session. Reversible: unset the var.
+//
+// Hard guard: the flag is IGNORED on the production Railway environment, so even
+// an accidental AUTH_DISABLED=true on prod can never open the login gate.
+const IS_PROD_ENV = process.env.RAILWAY_ENVIRONMENT_NAME === "production";
+const AUTH_DISABLED = process.env.AUTH_DISABLED === "true" && !IS_PROD_ENV;
 
 declare module "express-session" {
   interface SessionData {
