@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Link, useSearch } from "wouter";
+import { Link, useSearch, useLocation, useRoute } from "wouter";
 import { Camera, Shirt, Calendar, LayoutGrid, List, Settings, Plus, X, Loader2, Check, ChevronDown, ChevronRight, LogIn, LogOut, User, ArrowDownWideNarrow } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -33,6 +33,8 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import type { Item, Outfit } from "@shared/schema";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { ItemModal } from "@/components/ItemModal";
+import NotFound from "@/pages/not-found";
 
 type OutfitWithCount = Outfit & { itemCount: number };
 type ItemWithWearCount = Item & { wearCount: number };
@@ -74,8 +76,14 @@ interface BulkEntry {
 
 export default function Home() {
   const search = useSearch();
+  const [location, navigate] = useLocation();
   const searchParams = new URLSearchParams(search);
-  const initialTab = searchParams.get("tab") === "wardrobe" ? "wardrobe" : "outfits";
+  // Home is the catch-all route: "/" (wardrobe/outfits), "/items/:id" (wardrobe
+  // + item modal), and anything else (NotFound).
+  const [isItemRoute, itemParams] = useRoute("/items/:id");
+  const [isRoot] = useRoute("/");
+  const initialTab =
+    searchParams.get("tab") === "wardrobe" || isItemRoute ? "wardrobe" : "outfits";
 
   const [activeTab, setActiveTab] = useState(initialTab);
   const [outfitViewMode, setOutfitViewMode] = useState<"card" | "feed">("card");
@@ -291,8 +299,19 @@ export default function Home() {
     }
   };
 
+  // Unknown path (not "/" and not an item route) → 404. All hooks above have run.
+  if (!isRoot && !isItemRoute) {
+    return <NotFound />;
+  }
+
   return (
     <div className="min-h-dvh bg-background">
+      {isItemRoute && itemParams && (
+        <ItemModal
+          itemId={Number(itemParams.id)}
+          onClose={() => navigate("/?tab=wardrobe")}
+        />
+      )}
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
         <div className="px-4 py-2 flex items-center justify-between">
           {/* Spacer keeps the title centred when the right element exists */}

@@ -7,12 +7,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
 import { EnvBanner } from "@/components/EnvBanner";
 import { isProduction } from "@/lib/env";
-import NotFound from "@/pages/not-found";
 import Login from "@/pages/login";
 import Home from "@/pages/home";
 import AddOutfit from "@/pages/add-outfit";
 import Reconcile from "@/pages/reconcile";
-import ItemDetail from "@/pages/item-detail";
 import OutfitDetail from "@/pages/outfit-detail";
 import Activity from "@/pages/activity";
 
@@ -35,13 +33,14 @@ function PointerEventsGuard() {
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Home} />
       <Route path="/add-outfit" component={AddOutfit} />
       <Route path="/reconcile/:outfitId" component={Reconcile} />
-      <Route path="/items/:id" component={ItemDetail} />
       <Route path="/outfits/:id" component={OutfitDetail} />
       <Route path="/activity" component={Activity} />
-      <Route component={NotFound} />
+      {/* Home (wardrobe) is the catch-all: it renders for "/" and for
+          "/items/:id" (where it overlays the item modal) WITHOUT remounting,
+          and shows NotFound itself for unknown paths. */}
+      <Route component={Home} />
     </Switch>
   );
 }
