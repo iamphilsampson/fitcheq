@@ -6,6 +6,17 @@ background removal on outfit photos, and clothing detection from a photo.
 
 Migrated off Replit → local dev + Railway (July 2026). Kept Postgres.
 
+## Working practice — ship small, one change at a time (ENFORCE)
+- **One change per release** (or a few tightly-related small ones) — never stack
+  many unrelated changes into a big deploy. Big stacked deploys hide regressions
+  (e.g. the sideways-cutout bug that rode in on a 6-change push).
+- **Verify each change on staging before starting the next.** Deploy → eyeball on
+  the phone → only then pull the next item.
+- **Track everything on the board — `KANBAN.md`** (To Do / In Progress / Done). Keep
+  exactly ONE item In Progress; finish + verify it before pulling the next. Claude
+  maintains the board; Phil adds items to To Do.
+- Commit per change with a focused message so each is revertible in isolation.
+
 ## Stack
 - **Express + React (Vite) + Drizzle + Postgres**, TypeScript. One process serves
   the API and the built client on `PORT` (default 5000).
@@ -119,6 +130,14 @@ deploy straight to prod). Wire it from the Railway dashboard if/when wanted.
 - Colour bar not yet mirrored into outfit-detail's Replace/Remove-bg picker (still the
   old 300×400 preview + opacity swatches; add flow has the translucent bar).
 - Optional **batch reprocess** of old tall images (needs a browser for the WASM model).
+
+### Roadmap: build stamp in the env banner (scoped, not built)
+Show a build timestamp / short commit on the STAGING (and LOCAL) banner so it's
+obvious which version is live — kills "am I on my latest deploy?" doubt. Approach:
+bake `__BUILD_TIME__` (+ optional `RAILWAY_GIT_COMMIT_SHA` short) at build time via a
+Vite `define`, surface it in `components/EnvBanner.tsx` (non-prod only). Note: we
+deploy via `railway up` (not GitHub), so the git SHA env var may be empty — the build
+timestamp is the reliable signal. Small.
 
 ### Roadmap: AI item suggestions (scoped, not built)
 Auto-suggest an outfit's items instead of hand-tagging. **~80% already exists**:
