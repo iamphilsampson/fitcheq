@@ -7,15 +7,13 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 ---
 
 ## 🔴 To Do
-- **Wear count on items + sort wardrobe by wears** — surface how many times each item
-  has been worn on the item, and let the wardrobe sort by most-worn. _(good next pick)_
 - **Image on the outfit card** — show the outfit's image crisply on its card (nice, and
-  useful later as training data for AI item identification).
+  useful later as training data for AI item identification). _(NOT started — Phil + Claude
+  to align on the vision before building.)_
 - **[PARKED] Cut-out quality** — shoes still bad + model makes parts of the *subject*
   translucent (see-through limbs/torso). Evidence + candidate fixes in
   `export/model-evidence/README.md`. Revisit by trialling a better Replicate model than
   `rembg` (orientation + re-crop already landed).
-- **Build-version stamp in banner** (approved) — bake `__BUILD_TIME__`, show on STAGING/LOCAL.
 - **Magic-wand refinement** — on textured/dark regions (the puffer) it removes jagged
   chunks; needs a selection preview and/or better default sensitivity.
 - **Object-URL leak in bg-picker preview** (review #4) — `URL.revokeObjectURL` only on
@@ -26,9 +24,15 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - **Upload-your-own-background** (the "Your own" tile) (parked).
 
 ## 🟡 In Progress
-- _(nothing — pull the next item from To Do; branch off `main` first)_
+- **Wear count + build stamp on staging — awaiting Phil's phone check before prod.**
+  Both on `feature/wear-count`, deployed to staging. Build stamp verified on staging by
+  Claude (banner shows the timestamp). Wear count is behind login so Claude can't self-verify —
+  Phil to eyeball the Wardrobe tab on the staging URL (item rows show `n×`; Recent/Most-worn
+  sort toggle top-left). Once happy → promote to prod + merge to `main`.
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
+- 2026-08-06 · staging — Build-version stamp in non-prod banner (baked `__BUILD_TIME__` + short commit).
+- 2026-08-06 · staging — Wear count per wardrobe item (`n×`) + Recent/Most-worn sort toggle.
 - 2026-08-06 · main — Merge `migrate-off-replit` → `main` (fast-forward, pushed).
 - 2026-08-06 · staging — Cut-out cleanup editor v2 (erase + magic-wand, pinch/button zoom, offset eraser; lasso dropped).
 - 2026-08-06 · staging — Cleanup wired into add-outfit + outfit-detail; "Edit cut-out" back-nav; picker mirrored into outfit-detail.
