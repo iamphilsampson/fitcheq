@@ -163,10 +163,11 @@ export default function Home() {
     };
   }, []);
 
-  // Restore wardrobe scroll once the list is rendered, retrying across a few
-  // frames because the expanded rows keep growing the page height after mount.
+  // Restore wardrobe scroll once the list DATA has arrived (keying off `items`,
+  // not the loading flag, so we don't run before the fetch resolves), retrying
+  // across a few frames because the expanded rows grow the page height on render.
   useEffect(() => {
-    if (scrollReady.current || activeTab !== "wardrobe" || itemsLoading) return;
+    if (scrollReady.current || activeTab !== "wardrobe" || !items) return;
     const target = scrollTarget.current;
     if (target <= 0) {
       scrollReady.current = true;
@@ -183,7 +184,7 @@ export default function Home() {
       requestAnimationFrame(tryScroll);
     };
     requestAnimationFrame(tryScroll);
-  }, [activeTab, itemsLoading]);
+  }, [activeTab, items]);
 
   // Save wardrobe scroll position (rAF-throttled), once restore has settled.
   useEffect(() => {
