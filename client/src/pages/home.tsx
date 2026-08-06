@@ -134,11 +134,62 @@ export default function Home() {
     } catch {}
   }, [expandedCategories]);
 
-  // Save wardrobe scroll position (rAF-throttled) so we can restore it on return.
+  // Scroll target captured ONCE at mount, before any save can overwrite it.
+  const scrollTarget = useRef<number>(
+    (() => {
+      try {
+        const s = sessionStorage.getItem("fitcheck-wardrobe-scroll");
+        const y = s ? parseInt(s, 10) : 0;
+        return Number.isFinite(y) ? y : 0;
+      } catch {
+        return 0;
+      }
+    })(),
+  );
+  // Gate saving until the restore has settled, so an early scroll event can't
+  // clobber the saved position with 0 before we restore it.
+  const scrollReady = useRef(false);
+
+  // Take scroll restoration off "auto" so the browser doesn't reset us to 0.
+  useEffect(() => {
+    const prev = history.scrollRestoration;
+    try {
+      history.scrollRestoration = "manual";
+    } catch {}
+    return () => {
+      try {
+        history.scrollRestoration = prev;
+      } catch {}
+    };
+  }, []);
+
+  // Restore wardrobe scroll once the list is rendered, retrying across a few
+  // frames because the expanded rows keep growing the page height after mount.
+  useEffect(() => {
+    if (scrollReady.current || activeTab !== "wardrobe" || itemsLoading) return;
+    const target = scrollTarget.current;
+    if (target <= 0) {
+      scrollReady.current = true;
+      return;
+    }
+    let attempts = 0;
+    const tryScroll = () => {
+      window.scrollTo(0, target);
+      attempts += 1;
+      if (Math.abs(window.scrollY - target) <= 2 || attempts >= 20) {
+        scrollReady.current = true;
+        return;
+      }
+      requestAnimationFrame(tryScroll);
+    };
+    requestAnimationFrame(tryScroll);
+  }, [activeTab, itemsLoading]);
+
+  // Save wardrobe scroll position (rAF-throttled), once restore has settled.
   useEffect(() => {
     let raf = 0;
     const onScroll = () => {
-      if (raf) return;
+      if (!scrollReady.current || raf) return;
       raf = requestAnimationFrame(() => {
         raf = 0;
         if (activeTab === "wardrobe") {
@@ -154,16 +205,6 @@ export default function Home() {
       if (raf) cancelAnimationFrame(raf);
     };
   }, [activeTab]);
-
-  // Restore wardrobe scroll once, after the list has rendered on this mount.
-  const scrollRestored = useRef(false);
-  useEffect(() => {
-    if (scrollRestored.current || activeTab !== "wardrobe" || itemsLoading) return;
-    scrollRestored.current = true;
-    const saved = sessionStorage.getItem("fitcheck-wardrobe-scroll");
-    const y = saved ? parseInt(saved, 10) : 0;
-    if (y > 0) requestAnimationFrame(() => window.scrollTo(0, y));
-  }, [activeTab, itemsLoading]);
 
   const groupedItems = items?.reduce(
     (acc, item) => {
