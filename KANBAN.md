@@ -13,8 +13,10 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   has been worn on the item, and let the wardrobe sort by most-worn.
 - **Image on the outfit card** — show the outfit's image crisply on its card (nice, and
   useful later as training data for AI item identification).
-- **[PARKED] Cut-out quality** — shoes still coming out bad. Parked for now; revisit by
-  evaluating a better Replicate model than `rembg` (orientation + re-crop already landed).
+- **[PARKED] Cut-out quality** — shoes still bad + model makes parts of the *subject*
+  translucent (see-through limbs/torso). Evidence + candidate fixes in
+  `export/model-evidence/README.md`. Revisit by trialling a better Replicate model than
+  `rembg` (orientation + re-crop already landed).
 - **Build-version stamp in banner** (approved) — bake `__BUILD_TIME__`, show on STAGING/LOCAL.
 - **Magic-wand refinement** — on textured/dark regions (the puffer) it removes jagged
   chunks; needs a selection preview and/or better default sensitivity.
@@ -29,6 +31,7 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 ## 🟡 In Progress — re-clean / editor UX (branch `feature/recrop-reclean`, → staging → prod together)
 - ✅ Re-crop on re-clean + View-original in ⋮ menu — on staging.
 - ✅ Full-screen cut-out editor — on staging (11:00).
+- ✅ White editor background + edit full-width when zoomed — on staging.
 - ⏳ Awaiting Phil's phone test of the bundle, then promote to prod together.
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
@@ -45,3 +48,4 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - 2026-08-06 · **prod** — Promoted the full cut-out/cleanup batch (editor v2, centring, re-clean, orientation fix, review fixes) to production; applied 7 originals to prod DB; merged `feature/manual-bg-cleanup` → `main`.
 - 2026-08-06 · staging — Re-crop step on re-clean (trim clutter before removal) + View-original moved to the ⋮ menu.
 - 2026-08-06 · staging — Full-screen cut-out editor (big canvas, controls pinned; clears the env banner).
+- 2026-08-06 · staging — Editor: white background (spot faded blemishes) + edit full-width when zoomed.
