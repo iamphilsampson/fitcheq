@@ -1,6 +1,11 @@
 # Background Removal — Approach Log
 
-This document records every background-removal strategy tried in Fit Check, why each was changed, and what options remain if the current approach proves insufficient.
+This document records every background-removal strategy tried in FitCheq, why each was changed, and what options remain if the current approach proves insufficient.
+
+> **Current state (Aug 2026):** auto bg-removal (Replicate `cjwbw/rembg`, ISNet WASM
+> fallback) is followed by a manual **clean-up editor** — `components/CutoutEditor.tsx`,
+> with **Erase** brush + **Magic-wand** tools, undo, and re-crop-on-reclean. The model log
+> below is the history of the *automatic* step; the editor is the user-guided step on top.
 
 ---
 

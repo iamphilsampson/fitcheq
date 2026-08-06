@@ -31,7 +31,9 @@ Migrated off Replit → local dev + Railway (July 2026). Kept Postgres.
   (`max-w-md` container). **This app is used on a phone — verify at 375px width.**
 - `npm run dev` (tsx) · `npm run build` (esbuild via `script/build.ts`) · `npm start`
   · `npm run db:push` (drizzle-kit). Note: `tsc` is NOT clean (dormant
-  `server/replit_integrations` scaffolding) — the build uses esbuild, not tsc.
+  `server/replit_integrations/{auth,object_storage}`) — the build uses esbuild, not tsc.
+- The `ui/` set is a **trimmed** shadcn install (only in-use components kept). If you
+  need another shadcn primitive, re-add it with `npx shadcn add <name>`.
 
 ## Auth — single password
 - `server/auth.ts`: `POST /api/login` checks `APP_PASSWORD`, sets a session
@@ -42,6 +44,10 @@ Migrated off Replit → local dev + Railway (July 2026). Kept Postgres.
   DORMANT under `server/replit_integrations/auth/` for a future "Sign in with
   Google" (wanted for sharing). Re-enable = wire `setupAuth` back to it + set
   `GOOGLE_CLIENT_ID/SECRET`.
+- **Staging login bypass**: `AUTH_DISABLED=true` (set ONLY on staging) makes
+  `isAuthenticated` treat every request as the owner, so staging is testable without a
+  session. Hard-guarded to be ignored when `RAILWAY_ENVIRONMENT_NAME=production`, so it
+  can never open the gate on prod even if the var is set by mistake.
 
 ## Photos — local disk / volume
 - `server/uploads.ts`: `POST /api/uploads/request-url` → `PUT /api/uploads/put/:id`
@@ -79,6 +85,10 @@ Two environments, same service (`fitcheq`) + one Postgres + one volume each.
 - `railway up -e production -s fitcheq` → promote to prod
 - `--detach` returns immediately; watch with
   `railway logs -e <env> -s fitcheq --deployment --latest` (look for "serving on port").
+- **Clean / zero-downtime deploys**: `railway.json` sets `startCommand: node dist/index.cjs`
+  (node receives SIGTERM directly instead of npm reporting it as a crash) and
+  `healthcheckPath: /api/health`. `server/index.ts` handles SIGTERM/SIGINT gracefully
+  (`httpServer.close()` → exit 0). This is why deploys no longer fire false "crashed" alerts.
 
 **Staging DB**: reset/seed anytime with
 `railway ssh -e staging -s fitcheq -- node scripts/seed-staging.cjs`
@@ -94,8 +104,9 @@ temporary public proxy, see below).
 
 **Local preview** (Browser pane): `.claude/launch.json` (this repo) runs
 `npm run dev` pinned to **port 5050** (5000 is taken by macOS ControlCenter) — used
-when a session is rooted in this folder. The in-app browser can't hold the login
-session; test auth-gated flows on staging.
+when a session is rooted in this folder. The in-app browser can't hold a login session,
+so test auth-gated flows on **staging**, which runs with `AUTH_DISABLED=true` (no login
+needed there).
 
 ## Git
 `migrate-off-replit` was fast-forward **merged into `main`** (Aug 2026); `main` is now
@@ -103,14 +114,24 @@ the canonical branch (pushed to `origin`). Deploys stay **manual** via `railway 
 GitHub auto-deploy is deliberately not wired up yet (would make every push to `main`
 deploy straight to prod). Wire it from the Railway dashboard if/when wanted.
 
+## Wardrobe (home) — items & wear counts — `pages/home.tsx`
+- Two tabs (Outfits / Wardrobe). Wardrobe groups items by category (collapsible). Each
+  item row shows a **wear count** (`n×` = how many outfits use it); a sort toggle switches
+  **Most worn** (default) ↔ Recent. `/api/items` returns `wearCount` via
+  `storage.getAllItemsWithWearCount`.
+- Deleting an item or outfit navigates back to the wardrobe. A global `PointerEventsGuard`
+  (`App.tsx`) clears any stray Radix `pointer-events:none` on every route change — this is
+  what prevents the post-delete "frozen wardrobe" bug.
+
 ## Add-outfit flow (redesigned Aug 2026) — `pages/add-outfit.tsx` + `reconcile.tsx`
 3 steps with a progress indicator: **Crop → Background → Tag items**.
 - Crop screen offers **Remove background** (crop + auto bg-removal → clean-up → colour
   picker) or **Use photo as-is** (crop → save). No standalone remove-bg gate.
 - **Clean-up step** (`components/CutoutEditor.tsx`): optional manual tidy of the cutout
   between auto bg-removal and the colour picker. Two touch tools — **Erase** brush
-  (adjustable size) and **Lasso** cut (freeform loop, erases inside) — plus undo +
-  reset; checkerboard shows what's transparent. Part of the Background step (no extra
+  (adjustable size) and **Magic-wand** cut (tap a region to remove connected similar
+  pixels) — plus undo + reset; checkerboard shows what's transparent. (An earlier lasso
+  tool was dropped in editor v2.) Part of the Background step (no extra
   step number). "Next: Background" returns an edited PNG, or `null` if untouched (skip).
   Edits happen at ≤1600px long side (matches the composite frame). Used in **both** the
   add flow and outfit-detail's Remove-bg / Replace-photo flows.
@@ -139,13 +160,11 @@ deploy straight to prod). Wire it from the Railway dashboard if/when wanted.
   old 300×400 preview + opacity swatches; add flow has the translucent bar).
 - Optional **batch reprocess** of old tall images (needs a browser for the WASM model).
 
-### Roadmap: build stamp in the env banner (scoped, not built)
-Show a build timestamp / short commit on the STAGING (and LOCAL) banner so it's
-obvious which version is live — kills "am I on my latest deploy?" doubt. Approach:
-bake `__BUILD_TIME__` (+ optional `RAILWAY_GIT_COMMIT_SHA` short) at build time via a
-Vite `define`, surface it in `components/EnvBanner.tsx` (non-prod only). Note: we
-deploy via `railway up` (not GitHub), so the git SHA env var may be empty — the build
-timestamp is the reliable signal. Small.
+### Build stamp in the env banner (shipped Aug 2026)
+The STAGING/LOCAL banner shows a build timestamp (+ short commit when Railway sets
+`RAILWAY_GIT_COMMIT_SHA`), baked at build time via a Vite `define` (`__BUILD_TIME__` /
+`__BUILD_COMMIT__` in `vite.config.ts`, surfaced through `lib/env.ts` →
+`components/EnvBanner.tsx`). Prod shows no banner. Kills "am I on my latest deploy?" doubt.
 
 ### Roadmap: AI item suggestions (scoped, not built)
 Auto-suggest an outfit's items instead of hand-tagging. **~80% already exists**:
@@ -158,11 +177,11 @@ step) → navigate to reconcile with `?items=`. Option to swap GPT-4o → Claude
 match the stack (return the same shape). Small-to-medium.
 
 ### Backfilling originals for old outfits (Aug 2026)
-9 of 11 prod outfits (IDs 1-5,7-10) have `original_image_url = NULL`; only 12 & 14 have
-one. To retrofit clean sources so those can be re-cleaned in-app from a pristine photo:
-drop raw photos in `export/originals_retrofit/incoming/`, run `scripts/match-originals.mjs`
-(matches to outfits by EXIF date; dry-run then `--write` to emit `<outfitId>.jpg` + mapping.json),
+As of 2026-08-06, originals are backfilled for outfits **1-5, 7, 10** (12 & 14 already had
+them); only **8 & 9** remain with `original_image_url = NULL`. To retrofit more: drop raw
+photos in `export/originals_retrofit/incoming/`, run `scripts/match-originals.mjs` (matches
+to outfits by EXIF date; dry-run then `--write` to emit `<outfitId>.jpg` + mapping.json),
 then an apply step uploads them to the volume + sets `original_image_url` (staging first).
 Note the **2026-03-25** collision — outfits 8 & 10 share a date, so those two need confirming.
 AI bg-removal can't run server-side here (no `REPLICATE_API_KEY`, model is browser-WASM), so
-the actual remove-bg + erase/lasso stays a per-outfit in-app step after backfill.
+the actual remove-bg + erase/magic-wand stays a per-outfit in-app step after backfill.
