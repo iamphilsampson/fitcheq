@@ -27,10 +27,7 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - **Upload-your-own-background** (the "Your own" tile) (parked).
 
 ## 🟡 In Progress
-- **Promote the batch to prod** — de-risk pass done (independent review). Fixing review
-  findings first: #1 add-outfit bg-removal cancellation guard, #3 pinch-abort `edited`
-  flag, #2 undo memory cap (8→5). Then: deploy prod → apply 7 originals to prod DB
-  (prod-guarded) → merge `feature/manual-bg-cleanup` → `main`. Last big batch.
+- _(nothing — pull the next item from To Do; branch off `main` first)_
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
 - 2026-08-06 · main — Merge `migrate-off-replit` → `main` (fast-forward, pushed).
@@ -43,3 +40,4 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - 2026-08-06 · staging — Fix sideways cut-out (`normalizeOrientation` bakes EXIF) — confirmed good by Phil.
 - 2026-08-06 · repo — Working practice + KANBAN board + Done-as-changelog rule.
 - 2026-08-06 · staging — Pre-prod review fixes (bg-removal cancel guard, pinch-abort `edited` flag, undo cap 8→5).
+- 2026-08-06 · **prod** — Promoted the full cut-out/cleanup batch (editor v2, centring, re-clean, orientation fix, review fixes) to production; applied 7 originals to prod DB; merged `feature/manual-bg-cleanup` → `main`.
