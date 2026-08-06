@@ -45,16 +45,19 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   connector/computer-use needed) — this is about seeing failures without a human in the loop.
 
 ## 🟡 In Progress
-- **Wardrobe expand + scroll persistence — item-modal plan, PASS A — VERIFIED on staging,
-  ready to promote.** `feature/wardrobe-persist`. Persists `expandedCategories` + wardrobe
-  scroll (sessionStorage). Verified the real flow on staging: open item → back → wardrobe
-  restores BOTH expand (14 rows) and scroll (250px). Known minor gap: a HARD reload/deep-link
-  restores expand but not scroll (retry loses the layout-height race on cold fetch) — landing
-  at top on a full refresh is acceptable, and Pass B makes items a modal (no nav) anyway.
-  Plan: A (this) → B item **modal** (Radix Dialog, no swipe; keep `/items/:id` as a real URL,
-  modal opens over the wardrobe) → C tap-through to outfit-detail + back-closes-modal.
+- **Item interaction — PASS B: item opens as a MODAL, not a full page** — `feature/item-modal`.
+  Replace the full-page item view with a centered Radix `Dialog` (already in the kept UI set;
+  no new dep; closes via X / backdrop / Esc — no swipe). Modal shows item header (name · brand ·
+  colour · size) + ⋮ (Edit/Delete) + the outfits it's in as a quiet horizontal swipe row; a
+  photo is tappable to open the outfit full-screen (edge case, unobtrusive). Keep `/items/:id`
+  as a real shareable URL — the route opens the wardrobe with the modal already up. Then Pass C:
+  tap-through to outfit-detail + back-closes-modal history handling.
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
+- 2026-08-06 · **prod** — Wardrobe expand + scroll persistence (item-modal plan, pass A):
+  `expandedCategories` + scroll saved to sessionStorage; back-nav from an item/outfit restores
+  both (manual scrollRestoration + framewise retry + save gate). Verified on staging; merged
+  `feature/wardrobe-persist` → `main`. (Hard-refresh restores expand only — acceptable.)
 - 2026-08-06 · **prod** — Full codebase review + cleanup (4 passes): removed dead Replit
   scaffolding (audio/batch/chat/image + client audio + models/chat), 27 unused shadcn
   components + 5 dead client files, ~40 unused npm packages, and stale docs/config
