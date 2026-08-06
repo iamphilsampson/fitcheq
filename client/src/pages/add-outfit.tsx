@@ -80,6 +80,9 @@ export default function AddOutfit() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  // Set false when the user leaves the removal step so an in-flight bg-removal
+  // that resolves late is ignored (no force-jump to cleanup with a stale cutout).
+  const bgActiveRef = useRef(false);
 
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -171,6 +174,7 @@ export default function AddOutfit() {
     setCropRect(null);
     setOrigDims(null);
     setCompositeBlob(null);
+    bgActiveRef.current = false;
     setIsRemoveBgStep(false);
     setIsCleanupStep(false);
     setIsBgPickerMode(false);
@@ -282,15 +286,18 @@ export default function AddOutfit() {
       }
     }
     if (!source) return;
+    bgActiveRef.current = true;
     setIsRemovingBg(true);
     setBgProgress(null);
     setBgTimedOut(false);
     try {
-      const cutout = await removeBgFromBlob(source, (p) => setBgProgress(p));
+      const cutout = await removeBgFromBlob(source, (p) => { if (bgActiveRef.current) setBgProgress(p); });
+      if (!bgActiveRef.current) return; // user left the removal step — discard
       // Guard: if the segmenter returned an essentially-opaque image, we'd
       // produce a "fake" composite where the chosen background is fully covered
       // by the original photo. Detect and surface a clear message instead.
       const transparentRatio = await measureCutoutTransparency(cutout);
+      if (!bgActiveRef.current) return;
       console.info(`[bg-removal] transparentRatio=${transparentRatio.toFixed(3)}`);
       if (transparentRatio < 0.05) {
         throw new CutoutNotTransparentError(transparentRatio);
@@ -301,6 +308,7 @@ export default function AddOutfit() {
       setSelectedBg(0);
       setCompositeBlob(null);
     } catch (err) {
+      if (!bgActiveRef.current) return; // stale error after leaving the step
       if (err instanceof BgRemovalTimeoutError) {
         setBgTimedOut(true);
       } else if (err instanceof CutoutNotTransparentError) {
@@ -324,6 +332,7 @@ export default function AddOutfit() {
   };
 
   const handleSkipBgRemoval = async () => {
+    bgActiveRef.current = false;
     setBgTimedOut(false);
     setIsRemoveBgStep(false);
     // Save the (cropped) photo as-is and go to tagging.
@@ -391,6 +400,7 @@ export default function AddOutfit() {
     setIsCropping(false);
     setIsRemoveBgStep(false);
     setIsRemovingBg(false);
+    bgActiveRef.current = false;
     setBgTimedOut(false);
     setCutoutBlob(null);
     setIsCleanupStep(false);
@@ -500,6 +510,8 @@ export default function AddOutfit() {
   const TOTAL_STEPS = 3;
 
   const handleBack = () => {
+    // Any back-navigation cancels an in-flight bg-removal (ignore late results).
+    bgActiveRef.current = false;
     if (isBgPickerMode) {
       // Background removal is automatic now, so "back" from the picker returns
       // to the cleanup step (re-erase), which itself can go back to crop.

@@ -22,7 +22,9 @@ interface CutoutEditorProps {
 // so cleanup never undercuts output quality, while keeping undo snapshots (full
 // ImageData) affordable on phones.
 const MAX_EDIT_SIDE = 1600;
-const HISTORY_LIMIT = 8;
+// Undo depth. Each snapshot is a full ImageData (~7.7MB at 1600px on portrait);
+// capped low to bound peak memory on mobile Safari.
+const HISTORY_LIMIT = 5;
 const MIN_SCALE = 1;
 const MAX_SCALE = 6;
 // The erase target sits this many CSS px ABOVE the finger so it isn't hidden.
@@ -274,6 +276,9 @@ export default function CutoutEditor({ cutoutBlob, onDone }: CutoutEditorProps) 
         const snap = historyRef.current.pop();
         if (snap) baseRef.current?.getContext("2d")?.putImageData(snap, 0, 0);
         setCanUndo(historyRef.current.length > 0);
+        // If that reverted the first-and-only stroke, we're back to pristine —
+        // keep `edited` honest so finish() returns null instead of re-encoding.
+        setEdited(historyRef.current.length > 0);
       }
       drawingRef.current = false;
       tapRef.current = null;
