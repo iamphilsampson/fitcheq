@@ -27,10 +27,10 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - **Upload-your-own-background** (the "Your own" tile) (parked).
 
 ## 🟡 In Progress
-- **Re-crop on re-clean + move "View original" into the ⋮ menu** (outfit-detail).
-  Add a crop step before bg-removal in the Remove-bg / Replace flows (so side clutter
-  is cropped out, matching the add flow). And move the View-original toggle off the
-  floating image icon into the ⋮ dropdown. Branch: `feature/recrop-reclean`.
+- **Re-crop on re-clean + View-original in ⋮ menu** — built; **deployed to staging
+  (10:29)**. ⏳ Awaiting Phil's phone test (re-clean an outfit → crop step appears;
+  check the ⋮ "View original photo" toggle). Prod after sign-off. Branch:
+  `feature/recrop-reclean`.
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
 - 2026-08-06 · main — Merge `migrate-off-replit` → `main` (fast-forward, pushed).
@@ -44,3 +44,4 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - 2026-08-06 · repo — Working practice + KANBAN board + Done-as-changelog rule.
 - 2026-08-06 · staging — Pre-prod review fixes (bg-removal cancel guard, pinch-abort `edited` flag, undo cap 8→5).
 - 2026-08-06 · **prod** — Promoted the full cut-out/cleanup batch (editor v2, centring, re-clean, orientation fix, review fixes) to production; applied 7 originals to prod DB; merged `feature/manual-bg-cleanup` → `main`.
+- 2026-08-06 · staging — Re-crop step on re-clean (trim clutter before removal) + View-original moved to the ⋮ menu.
