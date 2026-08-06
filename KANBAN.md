@@ -24,15 +24,16 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - **Upload-your-own-background** (the "Your own" tile) (parked).
 
 ## 🟡 In Progress
-- **Wear count + build stamp on staging — awaiting Phil's phone check before prod.**
-  Both on `feature/wear-count`, deployed to staging. Build stamp verified on staging by
-  Claude (banner shows the timestamp). Wear count is behind login so Claude can't self-verify —
-  Phil to eyeball the Wardrobe tab on the staging URL (item rows show `n×`; Recent/Most-worn
-  sort toggle top-left). Once happy → promote to prod + merge to `main`.
+- **Ready to promote → prod (awaiting Phil's word).** `feature/wear-count`: wear count,
+  build stamp, and the staging auth bypass. All three verified by Claude on staging
+  (wear counts + Most-worn sort confirmed; banner stamp visible; bypass let Claude in
+  without a password). Note: the `AUTH_DISABLED` **var is set only on staging** — do NOT
+  set it on prod. On promote → `railway up -e production` + merge to `main`.
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
-- 2026-08-06 · staging — Build-version stamp in non-prod banner (baked `__BUILD_TIME__` + short commit).
-- 2026-08-06 · staging — Wear count per wardrobe item (`n×`) + Recent/Most-worn sort toggle.
+- 2026-08-06 · staging — `AUTH_DISABLED` bypass so staging is testable without a login (env-gated, prod untouched).
+- 2026-08-06 · staging — Build-version stamp in non-prod banner (baked `__BUILD_TIME__` + short commit). Verified.
+- 2026-08-06 · staging — Wear count per wardrobe item (`n×`) + Recent/Most-worn sort toggle. Verified.
 - 2026-08-06 · main — Merge `migrate-off-replit` → `main` (fast-forward, pushed).
 - 2026-08-06 · staging — Cut-out cleanup editor v2 (erase + magic-wand, pinch/button zoom, offset eraser; lasso dropped).
 - 2026-08-06 · staging — Cleanup wired into add-outfit + outfit-detail; "Edit cut-out" back-nav; picker mirrored into outfit-detail.
