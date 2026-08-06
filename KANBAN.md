@@ -48,7 +48,12 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   connector/computer-use needed) — this is about seeing failures without a human in the loop.
 
 ## 🟡 In Progress
-- _(nothing — pull the next item from To Do; branch off `main` first)_
+- **[ROADMAP→doing] Kill the "Railway crashed" deploy notification** — `fix/clean-deploys`.
+  Added: graceful SIGTERM/SIGINT shutdown in server/index.ts (`httpServer.close()` → exit 0,
+  10s force-exit fallback), public `GET /api/health` → 200, and `railway.json` with
+  `healthcheckPath=/api/health`. Health endpoint verified 200 locally. NOTE: the crash flag is
+  on the *old* container being replaced, which only gains the handler once this ships — so the
+  clean-shutdown proof appears on the *next* deploy after this one. Verifying on staging.
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
 - 2026-08-06 · **prod** — Fix item-delete wardrobe freeze: global `PointerEventsGuard` (clears

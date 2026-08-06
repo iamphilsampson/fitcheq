@@ -63,6 +63,13 @@ app.use((req, res, next) => {
   next();
 });
 
+// Health check — public, registered first so it never sits behind auth or the
+// SPA catch-all. Railway hits this to know the new deploy is live before it
+// routes traffic and stops the old container (see railway.json).
+app.get("/api/health", (_req, res) => {
+  res.status(200).json({ status: "ok" });
+});
+
 (async () => {
   // Seed the photo volume from export/photos on first boot (idempotent).
   await seedUploadsFromExport();
@@ -109,4 +116,22 @@ app.use((req, res, next) => {
       log(`serving on port ${port}`);
     },
   );
+
+  // Graceful shutdown. On redeploy Railway sends SIGTERM to the old container;
+  // without this, the process is force-killed (non-zero exit) and reported as a
+  // crash. Closing the server and exiting 0 makes deploys clean. A short timer
+  // force-exits if connections refuse to drain, so a deploy never hangs.
+  const shutdown = (signal: string) => {
+    log(`received ${signal}, shutting down`);
+    httpServer.close(() => {
+      log("connections drained, exiting");
+      process.exit(0);
+    });
+    setTimeout(() => {
+      log("drain timed out, forcing exit");
+      process.exit(0);
+    }, 10000).unref();
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 })();
