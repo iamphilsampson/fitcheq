@@ -7,14 +7,14 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 ---
 
 ## 🔴 To Do
-- **Re-crop step in the re-clean flow** — re-cleaning from the restored original uses
-  the FULL photo (side clutter/noise included), whereas the add flow crops first. No way
-  to re-crop on re-clean → noisy cut-outs vs freshly-added ones. Add a crop step before
-  bg-removal in outfit-detail's Remove-bg / Replace flows.
-- **Cut-out quality regression** — output is "worst yet". Largely the orientation fix
-  (a sideways subject wrecks segmentation) + the no-crop noise above; also confirm which
-  model actually ran (server `rembg` vs in-browser ISNet) and evaluate a better Replicate
-  model than `rembg`.
+- **Full-screen the cut-out editor** — the editing window is small (max ~46vh); when
+  zoomed it's picky/hard to be precise. Make it fill the screen. _(next up)_
+- **Wear count on items + sort wardrobe by wears** — surface how many times each item
+  has been worn on the item, and let the wardrobe sort by most-worn.
+- **Image on the outfit card** — show the outfit's image crisply on its card (nice, and
+  useful later as training data for AI item identification).
+- **[PARKED] Cut-out quality** — shoes still coming out bad. Parked for now; revisit by
+  evaluating a better Replicate model than `rembg` (orientation + re-crop already landed).
 - **Build-version stamp in banner** (approved) — bake `__BUILD_TIME__`, show on STAGING/LOCAL.
 - **Magic-wand refinement** — on textured/dark regions (the puffer) it removes jagged
   chunks; needs a selection preview and/or better default sensitivity.
@@ -26,11 +26,10 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - **Drag + pinch reposition of the cutout in the frame** (parked).
 - **Upload-your-own-background** (the "Your own" tile) (parked).
 
-## 🟡 In Progress
-- **Re-crop on re-clean + View-original in ⋮ menu** — built; **deployed to staging
-  (10:29)**. ⏳ Awaiting Phil's phone test (re-clean an outfit → crop step appears;
-  check the ⋮ "View original photo" toggle). Prod after sign-off. Branch:
-  `feature/recrop-reclean`.
+## 🟡 In Progress — re-clean / editor UX (branch `feature/recrop-reclean`, → staging → prod together)
+- ✅ Re-crop on re-clean + View-original in ⋮ menu — on staging.
+- ✅ Full-screen cut-out editor — on staging (11:00).
+- ⏳ Awaiting Phil's phone test of the bundle, then promote to prod together.
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
 - 2026-08-06 · main — Merge `migrate-off-replit` → `main` (fast-forward, pushed).
@@ -45,3 +44,4 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - 2026-08-06 · staging — Pre-prod review fixes (bg-removal cancel guard, pinch-abort `edited` flag, undo cap 8→5).
 - 2026-08-06 · **prod** — Promoted the full cut-out/cleanup batch (editor v2, centring, re-clean, orientation fix, review fixes) to production; applied 7 originals to prod DB; merged `feature/manual-bg-cleanup` → `main`.
 - 2026-08-06 · staging — Re-crop step on re-clean (trim clutter before removal) + View-original moved to the ⋮ menu.
+- 2026-08-06 · staging — Full-screen cut-out editor (big canvas, controls pinned; clears the env banner).
