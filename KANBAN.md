@@ -54,6 +54,8 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   tapping an outfit → `/outfits/:id` full page. a11y title warning fixed. Phil to confirm the
   touch UX (esp. ⋮ Edit/Delete — verbatim ports of the old item page) on his phone. Then Pass C:
   back-button-closes-modal history handling (optional polish).
+  Polish from Phil's review (fixed + verified on staging): first carousel image now padded
+  (`scroll-px-6`); close X no longer auto-focus-ringed on open (`onOpenAutoFocus` preventDefault).
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
 - 2026-08-06 · **prod** — Wardrobe expand + scroll persistence (item-modal plan, pass A):
