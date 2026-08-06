@@ -18,24 +18,27 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - **Build-version stamp in banner** (approved) — bake `__BUILD_TIME__`, show on STAGING/LOCAL.
 - **Magic-wand refinement** — on textured/dark regions (the puffer) it removes jagged
   chunks; needs a selection preview and/or better default sensitivity.
+- **Object-URL leak in bg-picker preview** (review #4) — `URL.revokeObjectURL` only on
+  `img.onload`; leaks on error and on rapid `selectedBg` changes. Add effect cleanup +
+  onerror revoke in add-outfit & outfit-detail preview effects. Minor.
 - **Promote to prod + push branch** — once staging is trusted again.
 - **AI item suggestions** (parked) — `/api/outfits/analyze` GPT-4o + reconcile pre-fill exist.
 - **Drag + pinch reposition of the cutout in the frame** (parked).
 - **Upload-your-own-background** (the "Your own" tile) (parked).
 
 ## 🟡 In Progress
-- **Fix sideways cut-out** — ✅ fixed in code (`normalizeOrientation` bakes EXIF rotation
-  before bg-removal; verified 2000×1500 flagged → 1500×2000 upright). **Deployed to
-  staging (09:35).** ⏳ Awaiting Phil's phone re-clean to confirm upright + whether the
-  mask quality recovers now the subject is upright. No file regeneration needed — the
-  code fix covers all 7 backfilled originals + future uploads.
+- **Promote the batch to prod** — de-risk pass done (independent review). Fixing review
+  findings first: #1 add-outfit bg-removal cancellation guard, #3 pinch-abort `edited`
+  flag, #2 undo memory cap (8→5). Then: deploy prod → apply 7 originals to prod DB
+  (prod-guarded) → merge `feature/manual-bg-cleanup` → `main`. Last big batch.
 
-## 🟢 Done
-- Merge `migrate-off-replit` → `main` (fast-forward, pushed).
-- Manual cut-out cleanup editor (erase; then v2: magic-wand, pinch/button zoom, offset eraser; lasso dropped).
-- Cleanup wired into add-outfit **and** outfit-detail; "Edit cut-out" back-nav; picker mirrored into outfit-detail.
-- Subject-centring via opaque bounding box.
-- Store cropped/downscaled photo as the "original".
-- Backfill 7 originals to staging (outfits 1,2,3,4,5,7,10) — ⚠️ orientation bug found, see In Progress.
-- Replicate key wired on staging **and** prod (shared var referenced).
-- Working-practice rule added to CLAUDE.md.
+## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
+- 2026-08-06 · main — Merge `migrate-off-replit` → `main` (fast-forward, pushed).
+- 2026-08-06 · staging — Cut-out cleanup editor v2 (erase + magic-wand, pinch/button zoom, offset eraser; lasso dropped).
+- 2026-08-06 · staging — Cleanup wired into add-outfit + outfit-detail; "Edit cut-out" back-nav; picker mirrored into outfit-detail.
+- 2026-08-06 · staging — Subject-centring via opaque bounding box.
+- 2026-08-06 · staging — Store cropped/downscaled photo as the "original".
+- 2026-08-06 · staging — Backfill 7 originals (outfits 1,2,3,4,5,7,10).
+- 2026-08-06 · staging + prod — Replicate `REPLICATE_API_KEY` wired (shared var referenced).
+- 2026-08-06 · staging — Fix sideways cut-out (`normalizeOrientation` bakes EXIF) — confirmed good by Phil.
+- 2026-08-06 · repo — Working practice + KANBAN board + Done-as-changelog rule.

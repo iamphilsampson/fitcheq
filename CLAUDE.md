@@ -16,6 +16,9 @@ Migrated off Replit → local dev + Railway (July 2026). Kept Postgres.
   exactly ONE item In Progress; finish + verify it before pulling the next. Claude
   maintains the board; Phil adds items to To Do.
 - Commit per change with a focused message so each is revertible in isolation.
+- **Changelog is the Done column.** On every deploy or merge, move the item to Done
+  with a stamp `YYYY-MM-DD · <env(s)> — <what shipped>`. Do this as part of the
+  deploy/merge step, not later — the Done column IS the running changelog.
 
 ## Stack
 - **Express + React (Vite) + Drizzle + Postgres**, TypeScript. One process serves
