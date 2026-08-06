@@ -92,9 +92,10 @@ temporary public proxy, see below).
 - Volume `fitcheq-volume` at `/data`; `UPLOAD_DIR=/data/uploads`, seeded from
   `export/photos` on boot.
 
-**Local preview** (Browser pane): `code/.claude/launch.json` runs fitcheq's
-`npm run dev` pinned to **port 5050** (5000 is taken by macOS ControlCenter). The
-in-app browser can't hold the login session; test auth-gated flows on staging.
+**Local preview** (Browser pane): `.claude/launch.json` (this repo) runs
+`npm run dev` pinned to **port 5050** (5000 is taken by macOS ControlCenter) — used
+when a session is rooted in this folder. The in-app browser can't hold the login
+session; test auth-gated flows on staging.
 
 ## Git
 `migrate-off-replit` was fast-forward **merged into `main`** (Aug 2026); `main` is now
