@@ -33,11 +33,14 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   findings list first (grouped by risk), then clean up in small, verifiable passes.
 
 ## 🟡 In Progress
-- **[BUG] Deleting an item freezes the wardrobe** — `fix/item-delete-freeze`. Root cause:
-  Radix AlertDialog leaves `pointer-events:none` on `<body>` when item-detail unmounts on the
-  post-delete navigate (outfit-detail had a local fix; item-detail didn't). Fix: global
-  `PointerEventsGuard` in App.tsx clears it on every route change (durable, covers all/future
-  pages) + local unmount cleanup added to item-detail for parity. Verifying on staging.
+- **[BUG] Deleting an item freezes the wardrobe — FIXED, verified on staging, ready to
+  promote → prod.** `fix/item-delete-freeze`. Root cause: Radix AlertDialog leaves
+  `pointer-events:none` on `<body>` when item-detail unmounts on the post-delete navigate
+  (outfit-detail had a local fix; item-detail didn't). Fix: global `PointerEventsGuard` in
+  App.tsx clears it on every route change (durable, covers all/future pages) + local unmount
+  cleanup added to item-detail for parity. Staging repro confirmed fixed: delete → back to
+  wardrobe, `body` pointer-events `auto`, categories expand/click fine. On go-ahead →
+  `railway up -e production` + merge to `main`.
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
 - 2026-08-06 · **prod** — Promoted wear-count + build-stamp + auth-bypass batch to production;
