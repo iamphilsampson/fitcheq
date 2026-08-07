@@ -7,10 +7,10 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 ---
 
 ## 🔴 To Do
-- **Toast messages — annoying + look bad** — audit every `toast(...)` call
-  (`hooks/use-toast.ts` + `components/ui/toast.tsx` + `toaster.tsx`): cut noisy/low-value
-  ones (fire only for real confirmations + errors), and restyle to match the app
-  (position, duration, size, colours). Phil finds them intrusive and off-brand.
+- **Toasts — cut the noisy ones + brand polish** _(interaction/duration/declutter already
+  shipped — see In Progress)_ — audit every `toast(...)` call and cut noisy/low-value ones
+  (fire only for real confirmations + errors), and finish the brand match (position + colours;
+  size/duration/close already done). Phil finds them intrusive and off-brand.
 - **Image on the outfit card** — show the outfit's image crisply on its card (nice, and
   useful later as training data for AI item identification). _(NOT started — Phil + Claude
   to align on the vision before building.)_
@@ -42,7 +42,15 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   connector/computer-use needed) — this is about seeing failures without a human in the loop.
 
 ## 🟡 In Progress
-- _(nothing — pull the next item from To Do; branch off `main` first)_
+- **Toast UX — interaction + duration + declutter (on staging, awaiting Phil's timing check)** —
+  tap ANYWHERE on the toast to dismiss (no more tiny cross); removed the off-centre `<ToastClose/>`
+  + reclaimed its padding (`p-6 pr-8` → `p-4`, `rounded-lg`); visible duration 2s → **1.5s**
+  (errors 2.6s so they're readable), with the exit-animation cleanup decoupled (400ms). Verified
+  on staging via live DOM (no close button, cursor-pointer, tap → `data-state=closed` → removed).
+  Branch `fix/toast-ux`. **Held off prod on purpose:** duration is a feel thing — Phil to try 1.5s
+  on staging and confirm (or ask for shorter/longer) before I promote. NOTE: this covers the
+  *interaction/duration/declutter* half of the board's toast item; the *"cut noisy/low-value
+  toast() calls + brand colours/position"* half is still open (see To Do).
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
 - 2026-08-07 · **prod** — Cut-out quality: swapped the default bg-removal model from `rembg`
