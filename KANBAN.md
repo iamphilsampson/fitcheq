@@ -42,17 +42,16 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   connector/computer-use needed) — this is about seeing failures without a human in the loop.
 
 ## 🟡 In Progress
-- **Toast UX — interaction + duration + declutter (on staging, awaiting Phil's timing check)** —
-  tap ANYWHERE on the toast to dismiss (no more tiny cross); removed the off-centre `<ToastClose/>`
-  + reclaimed its padding (`p-6 pr-8` → `p-4`, `rounded-lg`); visible duration 2s → **1.5s**
-  (errors 2.6s so they're readable), with the exit-animation cleanup decoupled (400ms). Verified
-  on staging via live DOM (no close button, cursor-pointer, tap → `data-state=closed` → removed).
-  Branch `fix/toast-ux`. **Held off prod on purpose:** duration is a feel thing — Phil to try 1.5s
-  on staging and confirm (or ask for shorter/longer) before I promote. NOTE: this covers the
-  *interaction/duration/declutter* half of the board's toast item; the *"cut noisy/low-value
-  toast() calls + brand colours/position"* half is still open (see To Do).
+- _(nothing — pull the next item from To Do; branch off `main` first)_
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
+- 2026-08-07 · **prod** — Toast UX (interaction/duration/declutter): tap ANYWHERE on a toast to
+  dismiss it; removed the off-centre close cross (`<ToastClose/>`) + reclaimed its padding
+  (`p-6 pr-8` → `p-4`, `rounded-lg`, cursor-pointer + select-none); visible duration 2s → **1.5s**
+  (errors **2.6s** so they stay readable) with the exit-animation cleanup decoupled to 400ms;
+  per-call `duration` still overrides. Verified on staging via live DOM (no close button, tap →
+  `data-state=closed` → removed from DOM). Merged `fix/toast-ux` → `main`; promoted to prod.
+  (Remaining toast work — cut noisy/low-value `toast()` calls + brand colours/position — still in To Do.)
 - 2026-08-07 · **prod** — Cut-out quality: swapped the default bg-removal model from `rembg`
   → **men1scus BiRefNet** (`DEFAULT_BG_MODEL` in `server/routes.ts`), chosen from the BG Lab
   bake-off. Clean edges, no translucent-subject artefacts, ~$0.002/img; ISNet (browser) stays
