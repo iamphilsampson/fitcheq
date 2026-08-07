@@ -341,7 +341,11 @@ Return ONLY a valid JSON array, no additional text. Example:
     // Premium: Bria RMBG 2.0 (official model), 256-level alpha. Costs real money.
     rmbg2: { slug: "bria/remove-background", input: (image) => ({ image }) },
   };
-  const DEFAULT_BG_MODEL = "rembg";
+  // Prod default: men1scus BiRefNet — chose it over rembg after the /bg-lab
+  // comparison (2026-08-07): clean edges, cheap (~$0.002/img), no translucent-
+  // subject artefacts. Bria RMBG 2.0 was better+faster but not worth ~$0.04/img
+  // at single-user scale. Client falls back to ISNet (browser) if this errors.
+  const DEFAULT_BG_MODEL = "birefnet";
 
   // Cache each slug's latest version id for the process lifetime so repeated lab
   // runs don't re-hit the models endpoint. Value null = resolve failed / official
