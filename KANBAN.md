@@ -14,13 +14,11 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - **Image on the outfit card** — show the outfit's image crisply on its card (nice, and
   useful later as training data for AI item identification). _(NOT started — Phil + Claude
   to align on the vision before building.)_
-- **Cut-out quality — pick the winning model (uses the BG Lab)** — the staging `/bg-lab`
-  (Done 2026-08-07) lets us run every candidate on the same crop. Phil to compare on the
-  problem outfits (translucent-subject one; dark shoes on dark floor) → decide the winner
-  (likely Bria RMBG 2.0 if quality justifies the ~$0.04/img). **To promote:** point the
-  prod default in `server/routes.ts` (`DEFAULT_BG_MODEL`) at the winner, sanity-check cost,
-  ship, then **retire the lab** (remove `/bg-lab` route + page + banner link, keep the model
-  allow-list only if useful). Evidence + fixes: `export/model-evidence/README.md`.
+- **[OPTIONAL] Retire the BG Lab** — men1scus is now the prod default (Done 2026-08-07), so
+  the `/bg-lab` comparison tool has served its purpose. It's inert on prod (route redirects,
+  no banner link) and still handy on staging for future model bake-offs, so no rush. When we
+  want it gone: remove `/bg-lab` route + `pages/bg-lab.tsx` + the banner link + (optionally)
+  trim the extra models from the `BG_MODELS` allow-list back to just `birefnet`.
 - **Magic-wand refinement** — on textured/dark regions (the puffer) it removes jagged
   chunks; needs a selection preview and/or better default sensitivity.
 - **Object-URL leak in bg-picker preview** (review #4) — `URL.revokeObjectURL` only on
@@ -47,7 +45,14 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
 - _(nothing — pull the next item from To Do; branch off `main` first)_
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
-- 2026-08-07 · **staging** — BG-model comparison lab (staging-only, temporary). New `/bg-lab`
+- 2026-08-07 · **prod** — Cut-out quality: swapped the default bg-removal model from `rembg`
+  → **men1scus BiRefNet** (`DEFAULT_BG_MODEL` in `server/routes.ts`), chosen from the BG Lab
+  bake-off. Clean edges, no translucent-subject artefacts, ~$0.002/img; ISNet (browser) stays
+  the fallback. Bria RMBG 2.0 was best+fastest but not worth ~$0.04/img at single-user scale
+  (parked as a known premium option in the lab). Verified on staging (default path → slug
+  `men1scus/birefnet`, ~2s); merged `feature/bg-lab` → `main` (pushed) + promoted to prod.
+  (The lab shipped in the same merge but is inert on prod — route redirects, no banner link.)
+- 2026-08-07 · **staging** — BG-model comparison lab (staging-only, now on `main`). New `/bg-lab`
   flow (clone of the add-outfit run): pick one photo → crop once → run every candidate model
   on that same crop, seeing raw cutout (on a checkerboard, to spot translucent-subject pixels)
   AND the full composite per model, plus model/total time + % transparent. Models: rembg
@@ -57,9 +62,8 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   run-by-name) with a 429-retry. Default stays `rembg` so **prod is untouched**. Route guards
   itself off on prod; link added to the STAGING banner. All 5 Replicate models verified
   returning PNGs against staging (rembg 8.3s, 851-labs 2.3s, birefnet 8.8s, rembg-enhance 15.4s,
-  bria 2.9s). Branch `feature/bg-lab` (NOT merged to main — staging-only tool). **Next: Phil
-  runs comparisons on the problem outfits → pick the winner → promote that one model to prod +
-  retire the lab** (see To Do).
+  bria 2.9s). Merged to `main` alongside the model swap above (inert on prod). Its job is
+  done — see the optional "Retire the BG Lab" item in To Do.
 - 2026-08-06 · **prod** — Item interaction redesign (item-modal plan, passes B + C): items open
   as a centered Radix Dialog over the wardrobe instead of a full page (`components/ItemModal.tsx`);
   Home is the catch-all route so `/items/:id` overlays without remounting the wardrobe (scroll/
