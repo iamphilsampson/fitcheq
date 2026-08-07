@@ -18,6 +18,15 @@ can't be saved from here automatically.)
 - **Shoes / feet** consistently poor — dark footwear on a dark floor is left with rough,
   smudged, or partially-missing edges.
 
+## Comparison harness (2026-08-07)
+A staging-only **BG Lab** now exists to evaluate these directly: `/bg-lab` (link in the
+STAGING banner). Pick one photo, crop once, then run every candidate model on that same
+crop — showing the raw cutout on a checkerboard (to spot translucent-subject pixels) and
+the full composite, with timings + % transparent. Models wired: rembg (current), 851-labs
+BiRefNet, men1scus BiRefNet, rembg-enhance, **Bria RMBG 2.0** (premium), ISNet (browser).
+Use it on the exact outfits below, then promote the winner via `DEFAULT_BG_MODEL` in
+`server/routes.ts`.
+
 ## Candidate fixes to evaluate (when unparked)
 - Swap `rembg` for a stronger current Replicate model (e.g. a BiRefNet / RMBG-2.0-class
   model) and compare on these exact outfits.
