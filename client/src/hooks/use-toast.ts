@@ -6,7 +6,14 @@ import type {
 } from "@/components/ui/toast"
 
 const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 2000
+// How long a toast stays visible before auto-dismissing. Kept short + snappy;
+// errors get a little longer so they're readable. Any toast can be dismissed
+// early by tapping it (see Toaster). A per-call `duration` prop overrides.
+const DEFAULT_TOAST_MS = 1500
+const DESTRUCTIVE_TOAST_MS = 2600
+// Grace period after dismiss before the toast is unmounted — just long enough
+// to cover the slide/fade-out animation (was conflated with the visible time).
+const TOAST_REMOVE_DELAY = 400
 
 type ToasterToast = ToastProps & {
   id: string
@@ -161,9 +168,16 @@ function toast({ ...props }: Toast) {
     },
   })
 
+  const visibleMs =
+    typeof props.duration === "number"
+      ? props.duration
+      : props.variant === "destructive"
+        ? DESTRUCTIVE_TOAST_MS
+        : DEFAULT_TOAST_MS
+
   setTimeout(() => {
     dismiss()
-  }, TOAST_REMOVE_DELAY)
+  }, visibleMs)
 
   return {
     id: id,
