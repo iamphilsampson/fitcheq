@@ -324,10 +324,11 @@ Return ONLY a valid JSON array, no additional text. Example:
   // Background-removal model allow-list. The client may request a specific model
   // by key (used by the staging-only /bg-lab comparison harness); anything not in
   // this map is rejected — we never pass an arbitrary Replicate slug from the
-  // client. Slugs are UNPINNED (owner/model) so `replicate.run` resolves each
-  // model's latest version — ideal for a comparison lab and robust to a pinned
-  // version being retired (as birefnet-portrait was). `input` maps the base64
-  // data URI to whatever field name each model expects.
+  // client. We resolve each model's LATEST version at request time and run it
+  // pinned (`owner/model:version`) — community models (rembg, birefnet, …) 404 on
+  // the run-by-name endpoint (only official models accept that), and resolving
+  // latest keeps the lab robust to a pinned version being retired. `input` maps
+  // the base64 data URI to whatever field name each model expects.
   const BG_MODELS: Record<string, { slug: string; input: (image: string) => Record<string, unknown> }> = {
     // Current production baseline.
     rembg: { slug: "cjwbw/rembg", input: (image) => ({ image }) },
@@ -341,6 +342,27 @@ Return ONLY a valid JSON array, no additional text. Example:
     rmbg2: { slug: "bria/remove-background", input: (image) => ({ image }) },
   };
   const DEFAULT_BG_MODEL = "rembg";
+
+  // Cache each slug's latest version id for the process lifetime so repeated lab
+  // runs don't re-hit the models endpoint. Value null = resolve failed / official
+  // model with no version → run by name.
+  const bgVersionCache = new Map<string, string | null>();
+  async function resolveBgRef(replicate: any, slug: string): Promise<string> {
+    if (bgVersionCache.has(slug)) {
+      const v = bgVersionCache.get(slug);
+      return v ? `${slug}:${v}` : slug;
+    }
+    const [owner, name] = slug.split("/");
+    try {
+      const model = await replicate.models.get(owner, name);
+      const vid: string | null = model?.latest_version?.id ?? null;
+      bgVersionCache.set(slug, vid);
+      return vid ? `${slug}:${vid}` : slug;
+    } catch {
+      bgVersionCache.set(slug, null);
+      return slug; // fall back to run-by-name (works for official models)
+    }
+  }
 
   // Background removal via Replicate (default: rembg; ISNet WASM fallback client-side).
   app.post("/api/bg-remove", isAuthenticated, async (req, res) => {
@@ -365,7 +387,22 @@ Return ONLY a valid JSON array, no additional text. Example:
       const replicate = new Replicate({ auth: apiKey });
 
       const started = Date.now();
-      const output = await replicate.run(chosen.slug, { input: chosen.input(imageData) });
+      const ref = await resolveBgRef(replicate, chosen.slug);
+      // Retry a couple of times on Replicate's prediction-creation throttle (429).
+      let output: unknown;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          output = await replicate.run(ref, { input: chosen.input(imageData) });
+          break;
+        } catch (runErr) {
+          const msg = runErr instanceof Error ? runErr.message : String(runErr);
+          if (/\b429\b|throttled|Too Many Requests/i.test(msg) && attempt < 2) {
+            await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+            continue;
+          }
+          throw runErr;
+        }
+      }
 
       // Extract URL from Replicate output — may be a string, FileOutput (toString → URL),
       // or an array of these (some models); always take the first item.
