@@ -13,6 +13,7 @@ import AddOutfit from "@/pages/add-outfit";
 import Reconcile from "@/pages/reconcile";
 import OutfitDetail from "@/pages/outfit-detail";
 import Activity from "@/pages/activity";
+import BgLab from "@/pages/bg-lab";
 
 /**
  * Durable guard against a Radix modal freeze. Radix Dialog/AlertDialog set
@@ -37,6 +38,8 @@ function Router() {
       <Route path="/reconcile/:outfitId" component={Reconcile} />
       <Route path="/outfits/:id" component={OutfitDetail} />
       <Route path="/activity" component={Activity} />
+      {/* Staging-only bg-model comparison lab (guards itself off on prod). */}
+      <Route path="/bg-lab" component={BgLab} />
       {/* Home (wardrobe) is the catch-all: it renders for "/" and for
           "/items/:id" (where it overlays the item modal) WITHOUT remounting,
           and shows NotFound itself for unknown paths. */}

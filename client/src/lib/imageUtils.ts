@@ -350,6 +350,100 @@ export async function removeBgFromBlob(
   return result;
 }
 
+// ── BG-model comparison lab (staging-only) ────────────────────────────────
+// One shared cropped source, run through each candidate model so the cutouts
+// (and full composites) can be compared side-by-side. Keys must match the
+// server allow-list in server/routes.ts (`isnet` runs in-browser, no server).
+
+export type BgLabModel = {
+  key: string;
+  label: string;
+  runsOn: "replicate" | "browser";
+  cost: string;
+  note?: string;
+};
+
+export const BG_LAB_MODELS: BgLabModel[] = [
+  { key: "rembg", label: "rembg", runsOn: "replicate", cost: "~$0.001", note: "Current prod baseline" },
+  { key: "bgremover", label: "851-labs BiRefNet", runsOn: "replicate", cost: "~$0.002", note: "Most-used remover" },
+  { key: "birefnet", label: "BiRefNet (men1scus)", runsOn: "replicate", cost: "~$0.002", note: "BiRefNet reference" },
+  { key: "rembg-enhance", label: "rembg-enhance", runsOn: "replicate", cost: "~$0.002", note: "Better matting" },
+  { key: "rmbg2", label: "Bria RMBG 2.0", runsOn: "replicate", cost: "~$0.04+", note: "Premium · 256-level alpha" },
+  { key: "isnet", label: "ISNet (browser)", runsOn: "browser", cost: "free", note: "Current fallback" },
+];
+
+export type BgLabResult = {
+  cutout: Blob;
+  clientMs: number;      // wall-clock incl. upload/download
+  serverMs: number | null; // pure Replicate run time (from X-Bg-Ms), null for browser
+  transparentRatio: number;
+};
+
+/**
+ * Run background removal with ONE named model, no fallback — the lab needs the
+ * true result (or a true failure) for the model asked for. `blob` should be the
+ * shared cropped source; orientation is normalised here to match production.
+ */
+export async function removeBgWithModel(
+  blob: Blob,
+  modelKey: string,
+  onProgress?: (p: BgRemovalProgress) => void,
+): Promise<BgLabResult> {
+  const src = await normalizeOrientation(blob).catch(() => blob);
+  const start = performance.now();
+  let cutout: Blob;
+  let serverMs: number | null = null;
+
+  if (modelKey === "isnet") {
+    cutout = await removeBgISNet(src, onProgress);
+  } else {
+    const r = await removeBgServerSideRaw(src, modelKey, onProgress, 120_000);
+    cutout = r.blob;
+    serverMs = r.serverMs;
+  }
+
+  const clientMs = Math.round(performance.now() - start);
+  const transparentRatio = await measureCutoutTransparency(cutout);
+  return { cutout, clientMs, serverMs, transparentRatio };
+}
+
+/**
+ * Like removeBgServerSide but for the lab: passes an explicit model key and
+ * returns the server's reported run time from the X-Bg-Ms header.
+ */
+async function removeBgServerSideRaw(
+  blob: Blob,
+  model: string,
+  onProgress?: (p: BgRemovalProgress) => void,
+  timeoutMs = 120_000,
+): Promise<{ blob: Blob; serverMs: number | null }> {
+  const imageData = await blobToBase64DataUri(blob);
+  onProgress?.({ phase: "server", percent: 0 });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch("/api/bg-remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageData, model }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(`bg-remove API error ${res.status}: ${err.error}`);
+    }
+    const msHeader = res.headers.get("X-Bg-Ms");
+    const serverMs = msHeader ? Number(msHeader) : null;
+    const result = await res.blob();
+    return { blob: result, serverMs: Number.isFinite(serverMs) ? serverMs : null };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") throw new BgRemovalTimeoutError();
+    throw err;
+  }
+}
+
 /**
  * Downscale (never upscale) an image blob to `maxLongSide` and re-encode as
  * JPEG. Used to keep stored "original" photos small — a re-uploaded 24MP phone

@@ -321,8 +321,28 @@ Return ONLY a valid JSON array, no additional text. Example:
     }
   });
 
-  // Background removal via BiRefNet portrait on Replicate
-  // Falls back gracefully to client-side ISNet if this endpoint is unavailable
+  // Background-removal model allow-list. The client may request a specific model
+  // by key (used by the staging-only /bg-lab comparison harness); anything not in
+  // this map is rejected — we never pass an arbitrary Replicate slug from the
+  // client. Slugs are UNPINNED (owner/model) so `replicate.run` resolves each
+  // model's latest version — ideal for a comparison lab and robust to a pinned
+  // version being retired (as birefnet-portrait was). `input` maps the base64
+  // data URI to whatever field name each model expects.
+  const BG_MODELS: Record<string, { slug: string; input: (image: string) => Record<string, unknown> }> = {
+    // Current production baseline.
+    rembg: { slug: "cjwbw/rembg", input: (image) => ({ image }) },
+    // BiRefNet-based, most-used remover on Replicate.
+    bgremover: { slug: "851-labs/background-remover", input: (image) => ({ image }) },
+    // BiRefNet reference implementation.
+    birefnet: { slug: "men1scus/birefnet", input: (image) => ({ image }) },
+    // rembg with an improved matting pass.
+    "rembg-enhance": { slug: "smoretalk/rembg-enhance", input: (image) => ({ image }) },
+    // Premium: Bria RMBG 2.0 (official model), 256-level alpha. Costs real money.
+    rmbg2: { slug: "bria/remove-background", input: (image) => ({ image }) },
+  };
+  const DEFAULT_BG_MODEL = "rembg";
+
+  // Background removal via Replicate (default: rembg; ISNet WASM fallback client-side).
   app.post("/api/bg-remove", isAuthenticated, async (req, res) => {
     try {
       const apiKey = process.env.REPLICATE_API_KEY;
@@ -330,21 +350,22 @@ Return ONLY a valid JSON array, no additional text. Example:
         return res.status(500).json({ error: "REPLICATE_API_KEY not configured" });
       }
 
-      const { imageData } = req.body as { imageData?: string };
+      const { imageData, model } = req.body as { imageData?: string; model?: string };
       if (!imageData || typeof imageData !== "string") {
         return res.status(400).json({ error: "imageData (base64 data URI) is required" });
+      }
+
+      const modelKey = model ?? DEFAULT_BG_MODEL;
+      const chosen = BG_MODELS[modelKey];
+      if (!chosen) {
+        return res.status(400).json({ error: `Unknown model "${modelKey}"` });
       }
 
       const Replicate = (await import("replicate")).default;
       const replicate = new Replicate({ auth: apiKey });
 
-      // rembg — reliable background removal model on Replicate.
-      // Previously used lucataco/birefnet-portrait but that model was removed.
-      // Pinned version for reproducibility: https://replicate.com/cjwbw/rembg
-      const output = await replicate.run(
-        "cjwbw/rembg:fb8af171cfa1616ddcf1242c093f9c46bcada5ad4cf6f2fbe8b81b330ec5c003",
-        { input: { image: imageData } }
-      );
+      const started = Date.now();
+      const output = await replicate.run(chosen.slug, { input: chosen.input(imageData) });
 
       // Extract URL from Replicate output — may be a string, FileOutput (toString → URL),
       // or an array of these (some models); always take the first item.
@@ -374,10 +395,16 @@ Return ONLY a valid JSON array, no additional text. Example:
         throw new Error(`Failed to fetch result from Replicate: ${imageResponse.status}`);
       }
 
+      const elapsedMs = Date.now() - started;
       res.setHeader("Content-Type", "image/png");
       res.setHeader("Cache-Control", "no-store");
+      res.setHeader("X-Bg-Model", modelKey);
+      res.setHeader("X-Bg-Slug", chosen.slug);
+      res.setHeader("X-Bg-Ms", String(elapsedMs));
+      // Expose the diagnostic headers to the browser fetch (the lab reads them).
+      res.setHeader("Access-Control-Expose-Headers", "X-Bg-Model, X-Bg-Slug, X-Bg-Ms");
       const buffer = await imageResponse.arrayBuffer();
-      console.info(`[bg-remove] returned PNG bytes=${buffer.byteLength} from ${parsedUrl.hostname}`);
+      console.info(`[bg-remove] model=${modelKey} slug=${chosen.slug} ms=${elapsedMs} bytes=${buffer.byteLength} from ${parsedUrl.hostname}`);
       res.end(Buffer.from(buffer));
     } catch (error) {
       console.error("[bg-remove] Error:", error);

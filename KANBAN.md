@@ -41,7 +41,15 @@ Simple kanban I manage in the background. One item **In Progress** at a time; sh
   connector/computer-use needed) — this is about seeing failures without a human in the loop.
 
 ## 🟡 In Progress
-- _(nothing — pull the next item from To Do; branch off `main` first)_
+- **BG-model comparison lab (staging-only)** — clone the add-outfit run into a separate
+  `/bg-lab` flow so we can take ONE cropped source and run it through every candidate
+  bg-removal model back-to-back, seeing both the raw cutout (checkerboard) AND the full
+  composite per model, side-by-side vs the original. Models: rembg (current), 851-labs
+  BiRefNet, men1scus BiRefNet, rembg-enhance, Bria RMBG 2.0 (premium), ISNet (browser).
+  Server `/api/bg-remove` gains a `model` key → allow-listed Replicate slugs (unpinned =
+  latest); default stays `rembg` so prod is untouched. Staging-gated route + link in the
+  STAGING banner. Temporary — for choosing the best model before promoting one to prod.
+  Branch: `feature/bg-lab`.
 
 ## 🟢 Done — changelog (stamped on deploy/merge: `date · env — what`)
 - 2026-08-06 · **prod** — Item interaction redesign (item-modal plan, passes B + C): items open

@@ -19,6 +19,15 @@ export function EnvBanner() {
       {appEnv === "staging" && (
         <span className="font-normal normal-case tracking-normal text-zinc-400">· test data</span>
       )}
+      {!isProduction && (
+        <a
+          href="/bg-lab"
+          className="font-normal normal-case tracking-normal text-amber-300 underline underline-offset-2 hover:text-amber-200"
+          data-testid="link-bg-lab"
+        >
+          · BG Lab
+        </a>
+      )}
       {buildLabel && (
         <span
           className="font-normal normal-case tracking-normal text-zinc-500"
